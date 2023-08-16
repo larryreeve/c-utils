@@ -1,0 +1,699 @@
+/*  lbfio.cpp
+ *
+ *  Low-level File Input/Output routines
+ *
+ *
+ *                       * PROPRIETARY PROGRAM MATERIAL *
+ *
+ *      NOTICE: THIS MATERIAL IS PROPRIETARY TO UNITED COMPUTER
+ *      AND IS NOT TO BE REPRODUCED, USED OR DISCLOSED EXCEPT
+ *      UPON WRITTEN AUTHORIZATION OF:
+ *
+ *                      UNITED COMPUTER SALES & SERVICE, INC.
+ *                      100 DOBBS LANE, SUITE 208
+ *                      CHERRY HILL, NEW JERSEY 08034
+ *                      609.795.7330
+ *
+ *            COPYRIGHT (C) 1995-1996 UNITED COMPUTER SALES & SERVICE, INC.
+ *
+ *
+ * Revision History:
+ *
+ *      Date            By      Notes
+ *      --------        ---     ------------------------------------------
+ *      12/01/95        LR      -Initial Release
+ *      02/06/96        LR      -Added information (GetAsString) methods
+ *      02/15/96        LR      -Read/Write require strings as parameters
+ *      03/14/96        LR      -Added ansi f_ file methods for buffering
+ *      03/26/96        LR      -Implemented readline function
+ *      12/07/96        LR      -Removed automatic Flush after every write;
+ *                               application should call Flush
+ *                              -Fixed Close bug; the file handle was being
+ *                               closed before the stream handle and any
+ *                               contents in the stream buffer were lost.
+ *      03/22/97        LR      -Renamed Delete method to Remove
+ *      04/23/97        LR      -Updates for VC++
+ *
+**/
+
+
+//---------------------------------------------------------------
+//---                INCLUDE FILES                            ---
+//---------------------------------------------------------------
+#include <errno.h>
+#include <dos.h>
+#include <fcntl.h>
+#include <io.h>
+#include <memory.h>
+#include <share.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#ifdef __TURBOC__
+  #include <locking.h>
+  #include <stat.h>
+#endif
+
+#ifdef _MSC_VER
+  #include <sys/types.h>
+  #include <sys/stat.h>
+  #include <sys/locking.h>
+#endif
+
+#include <lbport.h>
+#include <lbdebug.hpp>
+#include <lbfio.hpp>
+
+
+//---------------------------------------------------------------
+//---                   Private Constants                     ---
+//---------------------------------------------------------------
+LB_ASSERTFILE(__FILE__)
+
+
+//---------------------------------------------------------------
+//---                   Private Methods                       ---
+//---------------------------------------------------------------
+int             LB_Fio_T::m_GetClusterSize()
+{
+  #ifdef __TURBOC__
+  struct fatinfo FATInfo;
+
+  memset(&FATInfo,0,sizeof(FATInfo));
+  getfatd(&FATInfo);
+  return (FATInfo.fi_bysec * FATInfo.fi_sclus);
+  #else
+    return (4096);
+  #endif
+
+
+}
+
+
+//---------------------------------------------------------------
+//---                   Public  Methods                       ---
+//---------------------------------------------------------------
+LB_Fio_T::LB_Fio_T()
+{
+  m_FHandle = 0;
+  m_FStream = NULL;
+  memset(m_FileName,'\0',sizeof(m_FileName));
+}
+
+
+LB_Fio_T::~LB_Fio_T()
+{
+  Close();
+}
+
+
+void                    LB_Fio_T::Close()
+{
+  if (IsOpen() == LB_TRUE)
+    Unlock();
+
+  if (m_FStream != (FILE *) NULL)
+    fclose(m_FStream);
+
+  if (m_FHandle != 0)
+    close(m_FHandle);
+
+  m_FStream   = (FILE *) NULL;
+  m_FHandle   = 0;
+}
+
+
+LB_Bool_T       	LB_Fio_T::Create()
+{
+  Close();
+
+  m_FStream = fopen(m_FileName,"w+b");
+
+  if (m_FStream == (FILE *) NULL)
+    return (LB_FALSE);
+
+  Close();
+
+  return (LB_TRUE);
+}
+
+
+LB_DWord_T      	LB_Fio_T::CurrentPosition()
+{
+  long FilePos;
+
+  if (IsOpen() == LB_FALSE)
+    return (0L);
+
+  FilePos = ftell(m_FStream);
+
+  if (FilePos == (-1))
+    return (0L);
+  else
+    return ((LB_DWord_T) FilePos);
+}
+
+
+LB_Bool_T               LB_Fio_T::Remove()
+{
+  Close();
+
+  if (remove(m_FileName) != 0)
+    {
+    Trace1("Fio Remove Failed, last errstr=%s", strerror(errno));
+    return (LB_FALSE);
+    }
+  else
+    {
+    return (LB_TRUE);
+    }
+}
+
+
+LB_Bool_T       	LB_Fio_T::Exists()
+{
+  if (access(m_FileName,0) != 0)
+    return (LB_FALSE);
+  else
+    return (LB_TRUE);
+}
+
+
+void            	LB_Fio_T::Flush()
+{
+  if (m_FStream != (FILE *) NULL)
+    fflush(m_FStream);
+}
+
+
+//--- Returns path name of file.
+LB_Bool_T               LB_Fio_T::GetPathAsString(LB_String_T& pa_Buf)
+{
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  pa_Buf = m_FileName;
+
+  return (LB_TRUE);
+}
+
+
+//--- Returns date of file.
+LB_Bool_T               LB_Fio_T::GetDateAsString(LB_String_T& pa_Buf)
+{
+  #ifdef __TURBOC__
+  struct stat FileStatus;
+  #endif
+
+  #ifdef _MSC_VER
+  struct _stat FileStatus;
+  #endif
+
+  struct tm*  FileTime;
+  char        DateStr[16];
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  #ifdef __TURBOC__
+  if (stat(m_FileName,&FileStatus) != 0)
+    return (LB_FALSE);
+  #endif
+
+  #ifdef __MSC_VER__
+  if (_stat(m_FileName,&FileStatus) != 0)
+    return (LB_FALSE);
+  #endif
+
+  FileTime = localtime(&FileStatus.st_mtime);
+
+  sprintf(DateStr,"%02d/%02d/%04d",
+          FileTime->tm_mon+1,
+          FileTime->tm_mday,
+          FileTime->tm_year + 1900);
+
+  pa_Buf = DateStr;
+
+  return (LB_TRUE);
+}
+
+
+//--- Returns time of file.
+LB_Bool_T               LB_Fio_T::GetTimeAsString(LB_String_T& pa_Buf)
+{
+  struct stat FileStatus;
+  struct tm*  FileTime;
+  char        TimeStr[16];
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  if (stat(m_FileName,&FileStatus) != 0)
+    return (LB_FALSE);
+
+  FileTime = localtime(&FileStatus.st_mtime);
+
+  if (FileTime->tm_hour > 12)
+    {
+    FileTime->tm_hour = FileTime->tm_hour - 12;
+    sprintf(TimeStr,"%02d:%02d pm",FileTime->tm_hour,FileTime->tm_min);
+    }
+  else
+    sprintf(TimeStr,"%02d:%02d am",FileTime->tm_hour,FileTime->tm_min);
+
+  pa_Buf = TimeStr;
+
+  return (LB_TRUE);
+}
+
+
+//--- Returns size of file.
+LB_Bool_T               LB_Fio_T::GetSizeAsString(LB_String_T& pa_Buf)
+{
+  struct stat FileStatus;
+  char        SizeStr[16];
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  if (stat(m_FileName,&FileStatus) != 0)
+    return (LB_FALSE);
+
+  sprintf(SizeStr,"%lu",FileStatus.st_size);
+
+  pa_Buf = SizeStr;
+
+  return (LB_TRUE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::IsEOF()
+{
+  if (CurrentPosition() >= Size())
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::IsOpen()
+{
+  if ((m_FHandle > 0) && (m_FStream != (FILE *) NULL))
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::Lock()
+{
+  int Erc;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  #ifdef __TURBOC__
+  Erc = lock(m_FHandle, 0L, Size());
+  #endif
+
+  #ifdef _MSC_VER
+  if (fseek(m_FStream, 0L, SEEK_SET) != 0)
+    return (LB_FALSE);
+
+  Erc = _locking(m_FHandle, _LK_NBLCK, Size());
+  #endif
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::LockRange(LB_DWord_T pa_Offset, LB_DWord_T pa_Length)
+{
+  int Erc;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  #ifdef __TURBOC__
+  Erc = lock(m_FHandle,pa_Offset,pa_Length);
+  #endif
+
+  #ifdef _MSC_VER
+  if (fseek(m_FStream, pa_Offset, SEEK_SET) != 0)
+    return (LB_FALSE);
+
+  Erc = _locking(m_FHandle, _LK_NBLCK, pa_Length);
+  #endif
+
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::Open(LB_Word_T pa_OpenMode)
+{
+  LB_Word_T     OpenMode;
+  LB_Word_T     ShareMode;
+  LB_Bool_T     BufferedFlag;
+  char          ModeStr[32];
+
+  Close();
+
+  //-- check if file exists
+  if (Exists() == LB_FALSE)
+    return (LB_FALSE);
+
+  BufferedFlag = LB_TRUE;
+
+  //--- Determine open & share mode, set buffering flag
+  switch(pa_OpenMode)
+    {
+    case FIO_OM_RO_BUF:
+    case FIO_OM_RO_NOBUF:
+      OpenMode  = O_RDONLY | O_BINARY;
+      ShareMode = SH_DENYNO;
+      strcpy(ModeStr,"rb");
+      if (pa_OpenMode == FIO_OM_RO_NOBUF)
+        BufferedFlag = LB_FALSE;
+      break;
+
+    case FIO_OM_WO_BUF:
+    case FIO_OM_WO_NOBUF:
+      OpenMode  = O_WRONLY | O_BINARY;
+      ShareMode = SH_DENYNO;
+      strcpy(ModeStr,"r+b");
+      if (pa_OpenMode == FIO_OM_WO_NOBUF)
+        BufferedFlag = LB_FALSE;
+      break;
+
+    case FIO_OM_RW_BUF:
+    case FIO_OM_RW_NOBUF:
+      OpenMode  = O_RDWR | O_BINARY;
+      ShareMode = SH_DENYNO;
+      strcpy(ModeStr,"r+b");
+      if (pa_OpenMode == FIO_OM_RW_NOBUF)
+        BufferedFlag = LB_FALSE;
+      break;
+
+    case FIO_OM_EXCLUSIVE:
+      OpenMode  = O_RDWR | O_BINARY;
+      ShareMode = SH_DENYRW;
+      strcpy(ModeStr,"r+b");
+      break;
+
+    default:
+      OpenMode  = O_RDWR | O_BINARY;
+      ShareMode = SH_DENYNO;
+      strcpy(ModeStr,"r+b");
+    }
+
+
+  m_FHandle = open(m_FileName, OpenMode | ShareMode, S_IWRITE | S_IREAD);
+  //--- File open failed
+  if (m_FHandle == (-1))
+    {
+    Close();
+    return (LB_FALSE);
+    }
+
+  m_FStream = fdopen(m_FHandle,ModeStr);
+  //--- File duplication failed
+  if (m_FStream == (FILE *) NULL)
+    {
+    Close();
+    return (LB_FALSE);
+    }
+
+  if (BufferedFlag == LB_TRUE)
+    {
+    if (!setvbuf(m_FStream, (char *) NULL, _IOFBF, m_GetClusterSize()))
+      {
+      if (!setvbuf(m_FStream, (char *) NULL, _IOFBF, 4096))
+        setvbuf(m_FStream, (char *) NULL, _IOFBF, 1024);
+      }
+    }
+
+  return (LB_TRUE);
+}
+
+
+//--- Will read up to the string size bytes
+LB_Word_T   LB_Fio_T::Read(LB_String_T& pa_String)
+  {
+  size_t  BytesRead;
+
+  if (IsOpen() == LB_FALSE)
+    return (0);
+
+  BytesRead = fread(&pa_String[0],1,pa_String.Size(),m_FStream);
+
+  Trace1("FIO BytesRead=%d", BytesRead);
+
+  if (BytesRead <= 0)
+    return (0);
+  else
+    return ((LB_Word_T) BytesRead);
+}
+
+
+LB_Word_T               LB_Fio_T::ReadLine(LB_String_T& pa_String)
+{
+  LB_Word_T     CntCharsRead;
+  char          CharRead;
+  LB_Bool_T     LoopFlag;
+  int           Idx;
+  long          FilePos;
+  size_t        BytesRead;
+
+  FilePos = ftell(m_FStream);
+
+  CntCharsRead = 0;
+
+  BytesRead = fread(&pa_String[0], 1, pa_String.Size(), m_FStream);
+
+  if (BytesRead <= 0)
+    return (0);
+
+  for (Idx=0; Idx < BytesRead; Idx++)
+  {
+    if (pa_String[Idx] == 0x0D)
+      break;
+  }
+
+  CntCharsRead = Idx + 2;
+
+  memset(&pa_String[Idx], ' ', pa_String.Size() - Idx);
+
+  FilePos = FilePos + CntCharsRead;
+
+  if (fseek(m_FStream, FilePos, SEEK_SET) != 0)
+    return (0);
+
+/*
+LoopFlag = LB_TRUE;
+  while (LoopFlag == LB_TRUE)
+    {
+    CharRead = fgetc(m_FStream);
+
+    switch(CharRead)
+      {
+      case 0x0D:
+        break;
+
+      case 0x0A:
+      case 0x1A:
+        LoopFlag = LB_FALSE;
+        break;
+
+      default:
+        pa_String[CntCharsRead] = CharRead;
+        CntCharsRead = CntCharsRead + 1;
+        break;
+      }
+
+    if (LoopFlag == LB_TRUE)
+      {
+      if (CntCharsRead >= pa_String.Size())
+        LoopFlag = LB_FALSE;
+      }
+    }
+
+  //pa_String.TrimRight();
+  //pa_String.PadRight(CntCharsRead,' ');
+*/
+  return (CntCharsRead);
+}
+
+
+LB_Bool_T       	LB_Fio_T::SeekFromCurrent(LB_DWord_T pa_Offset)
+{
+  int  Erc;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  Erc = fseek(m_FStream,pa_Offset,SEEK_CUR);
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::SeekFromEOF(LB_DWord_T pa_Offset)
+{
+  long  Erc;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  Erc = fseek(m_FStream,pa_Offset,SEEK_END);
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T       	LB_Fio_T::SeekFromStart(LB_DWord_T pa_Offset)
+{
+  int   Erc;
+  long  CurPos;
+  long  Offset;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  CurPos = ftell(m_FStream);
+
+  if ((LB_DWord_T) CurPos < pa_Offset)
+    {
+    Offset = pa_Offset - CurPos;
+    Erc = fseek(m_FStream,Offset,SEEK_CUR);
+    }
+  else
+    {
+    Erc = fseek(m_FStream,pa_Offset,SEEK_SET);
+    }
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+void                    LB_Fio_T::SetFileName(LB_String_T& pa_FileName)
+{
+  memset(m_FileName,'\0',sizeof(m_FileName));
+  pa_FileName.AsAsciiZ(m_FileName,sizeof(m_FileName));
+}
+
+
+LB_DWord_T        	LB_Fio_T::Size()
+{
+  struct stat   FileStatus;
+
+  if (IsOpen() == LB_FALSE)
+    return (0);
+
+  if (fstat(m_FHandle,&FileStatus) != 0)
+    return (0);
+
+  return (FileStatus.st_size);
+}
+
+
+LB_Bool_T         	LB_Fio_T::Unlock()
+{
+  int Erc;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  #ifdef __TURBOC__
+  Erc = unlock(m_FHandle,0L,Size());
+  #endif
+
+  #ifdef _MSC_VER
+  if (fseek(m_FStream, 0L, SEEK_SET) != 0)
+    return (LB_FALSE);
+
+  Erc = _locking(m_FHandle, _LK_UNLCK, Size());
+  #endif
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T         	LB_Fio_T::UnlockRange(LB_DWord_T pa_Offset, 
+                                          LB_DWord_T pa_Length)
+{
+  int Erc;
+
+  if (IsOpen() == LB_FALSE)
+    return (LB_FALSE);
+
+  #ifdef __TURBOC__
+  Erc = unlock(m_FHandle,pa_Offset,pa_Length);
+  #endif
+
+  #ifdef _MSC_VER
+  if (fseek(m_FStream, pa_Offset, SEEK_SET) != 0)
+    return (LB_FALSE);
+
+  Erc = _locking(m_FHandle, _LK_UNLCK, pa_Length);
+  #endif
+
+
+  if (Erc == 0)
+    return (LB_TRUE);
+  else
+    return (LB_FALSE);
+}
+
+
+//--- Will write up to the string size bytes
+LB_Word_T               LB_Fio_T::Write(LB_String_T& pa_String)
+{
+  size_t BytesWritten;
+
+  if (IsOpen() == LB_FALSE)
+    return (0);
+
+  BytesWritten = fwrite(&pa_String[0],1,pa_String.Size(),m_FStream);
+
+  if (BytesWritten != pa_String.Size())
+    return (0);
+  else
+    {
+    return ((LB_Word_T) BytesWritten);
+    }
+}
+
+
+LB_Word_T               LB_Fio_T::WriteLine(LB_String_T& pa_String)
+{
+  size_t BytesWritten;
+
+  BytesWritten = fwrite(&pa_String[0],pa_String.Size(),1,m_FStream);
+  if (BytesWritten != pa_String.Size())
+    return (0);
+
+  fprintf(m_FStream,"%c%c",0x0D,0x0A);
+
+  return (pa_String.Size());
+}

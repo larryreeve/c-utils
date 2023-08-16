@@ -1,0 +1,3306 @@
+/*  gempaylp.cpp
+ *
+ *  Gem Payroll Laser Check Print Processing routines
+ *
+ *
+ *                       * PROPRIETARY PROGRAM MATERIAL *
+ *
+ *      NOTICE: THIS MATERIAL IS PROPRIETARY TO UNITED COMPUTER
+ *      AND IS NOT TO BE REPRODUCED, USED OR DISCLOSED EXCEPT
+ *      UPON WRITTEN AUTHORIZATION OF:
+ *
+ *                      UNITED COMPUTER SALES & SERVICES, INC.
+ *                      100 DOBBS LANE, SUITE 208
+ *                      CHERRY HILL, NEW JERSEY 08034
+ *                      609.795.7330
+ *
+ *            COPYRIGHT (C) 1995-2000 UNITED COMPUTER SALES & SERVICES, INC.
+ *
+ *
+ * Revision History:
+ *
+ *      Date            By      Notes
+ *      --------        ---     ------------------------------------------
+ *      06/07/96        LR      -Initial Release
+ *      02/01/97        LR      -Rewrite due to new check format
+ *      03/14/97        LR      -Added support for Crystal Reports
+ *		11/07/99		LR		-Added support for 1099 type filter
+ *
+ * Notes:
+ *
+ * Format of check print file is:
+ *
+ *      Field Name              Line     Offset  Size
+ *      ----------------------- -------  ------- ----
+ *      Stub.EmpNum             1         0       7
+ *      Stub.EmpName            2         0      30
+ *      Stub.SocSecNum          3         0      11
+ *      Stub.PeriodEnd          4         0       8
+ *      Stub.DateIssued         5         0       8
+ *      Stub.CheckNum           6         0       7
+ *      Stub.EarnCode01..12     7..18     0      10
+ *      Stub.EarnHours01..12    7..18    10       8
+ *      Stub.EarnRate01..12     7..18    18      11
+ *      Stub.EarnAmt01..12      7..18    29      11
+ *      Stub.FedTax             19        0      11
+ *      Stub.FedTaxYTD          19       11      11
+ *      Stub.StateTax           20        0      11
+ *      Stub.StateTaxYTD        20       11      11
+ *      Stub.Fica               21        0      11
+ *      Stub.FicaYTD            21       11      11
+ *      Stub.Medicare           22        0      11
+ *      Stub.MedicareYTD        22       11      11
+ *      Stub.VacationTime       23        0      11
+ *      Stub.VacationRemain     23       11      11
+ *      Stub.SickTime           24        0      11
+ *      Stub.SickRemain         24       11      11
+ *      Stub.PersonalTime       25        0      11
+ *      Stub.PersonalRemain     25       11      11
+ *      Stub.OtherTime          26        0      11
+ *      Stub.OtherRemain        26       11      11
+ *      Stub.DedCode01..20      27..46    0       3
+ *      Stub.DedAmt01..20       27..46    3      11
+ *      Stub.DedAmtYTD01..20    27..46   14      11
+ *      Stub.DedBalance01..20   27..46   25      11
+ *      Stub.Earnings           47        0      11
+ *      Stub.EarningsYTD        48        0      11
+ *      Stub.NetPay             49        0      11
+ *      Stub.NetPayYTD          50        0      11
+ *      Stub.MaritalStatus      51        0       1
+ *      Stub.Allowances         52        0       2
+ *      Stub.CostCenter         53        0       5
+ *------
+ *      Body.Date               54        0       8
+ *      Body.CheckNum           55        0       6
+ *      Body.Amt                56        0      14
+ *      Body.SpellAmt01..02     57..58    0      55
+ *      Body.PayToName          59        0      30
+ *      Body.PayToAddr01..05    60..64    0      30
+ *------
+ *      Stub.Msg01              65        0      20
+ *      Stub.Msg02              66        0      20
+ *      Stub.Location           67        0       5
+ *
+ *
+ *      Total Lines = 67
+ *
+ *      Synchronization is *** before start of each check
+ *
+ *----------------------------------------------------------------------------
+ *
+ * Format of W2 file is:
+ *
+ *      Field Name              Line     Offset  Size
+ *      ----------------------- -------  ------- ----
+ *		LineSep					 1		  0		   3
+ *      Control                  2        0        8
+ *      FedID                    3        0       10
+ *      FedWages                 4        0       15
+ *      FedTax                   5        0       14
+ *      FicaWages                6        0       15
+ *      FicaTax                  7        0       14
+ *      OrgName                  8        0       32
+ *      OrgAddr01..02            9..10    0       32
+ *      OrgCityState             11       0       32
+ *      OrgZipCode               12       0       10
+ *      MedWages                 13       0       15
+ *      MedTax                   14       0       14
+ *      SocSecNum                15       0       11
+ *      EIC                      16       0       15
+ *      Fringe                   17       0       14
+ *      DepCare                  18       0       14
+ *      EmpName                  19       0       30
+ *      EmpAddr01..03            20..22   0       30
+ *      EmpZipCode               23       0       10
+ *      Box12Code01..04          24..27   0        1
+ *      Box12Amt01..04           24..27   1       12
+ *      Box14Code01..03          28..29   0        8
+ *      Box14Amt01..03           28..30   8       11
+ *      PensionFlag              31       0        1
+ *      SubTotalFlag             32       0        1
+ *      DefCompFlag              33       0        1
+ *      StateName                34       0        5
+ *      StateID                  35       0       10
+ *      StateWages               36       0       11
+ *      StateTax                 37       0        9
+ *		EmpFName				 38       0       30
+ *		Box14Code4				 39       0        1
+ *		Box14Amt4				 39       0       11
+ *
+ *      Total Lines = 39
+ *
+ *      Synchronization is *** before start of each W2
+ *
+ *----------------------------------------------------------------------------
+ *
+ * Format of 1099 file is:
+ *
+ *      Field Name              Line     Offset  Size
+ *      ----------------------- -------  ------- ----
+ *      PayerName                1        0       34
+ *      PayerAddress01..03       2..4     0       34
+ *      PayerFedID               5        0       17
+ *      RecipFedID               6        0       17
+ *      RecipName                7        0       34
+ *      RecipAddress01..03       8..10    0       34
+ *      FedTax                   11       0       14
+ *      NonEmpComp               12       0       14
+ *      PayerStateID             13       0       17
+ *		Filter1099				 14		  0       10
+ *		Rents					 15		  0		  14
+ *
+ *      Total Lines = 15
+ *
+ *      Synchronization is *** before start of each 1099
+ *
+ *----------------------------------------------------------------------------
+**/
+
+
+//---------------------------------------------------------------
+//---                INCLUDE FILES                            ---
+//---------------------------------------------------------------
+#include <memory.h>
+#include <stdio.h>
+#include <lbport.h>
+#include <lbdebug.hpp>
+#include <xbtable.hpp>
+#include <gempaylp.hpp>
+
+#define MAX_LINESIZE            256
+
+LB_ASSERTFILE(__FILE__)
+
+
+//---------------------------------------------------------------
+//---                   Private Methods                       ---
+//---------------------------------------------------------------
+void GemPayLP_T::m_ChkClear()
+{
+    LB_Word_T     Index;
+
+    //--- Clear stub area
+    m_Chk.Stub.EmpNum.Clear();
+    m_Chk.Stub.EmpName.Clear();
+    m_Chk.Stub.SocSecNum.Clear();
+    m_Chk.Stub.PeriodEnd.Clear();
+    m_Chk.Stub.DateIssued.Clear();
+    m_Chk.Stub.ChkNum.Clear();
+
+    for (Index=0; Index < PAYLP_MAX_EARN_LINES; Index++)
+    {
+        m_Chk.Stub.Earn[Index].Code.Clear();
+        m_Chk.Stub.Earn[Index].Hours.Clear();
+        m_Chk.Stub.Earn[Index].Rate.Clear();
+        m_Chk.Stub.Earn[Index].Amt.Clear();
+    }
+
+    m_Chk.Stub.FedTax.Clear();          m_Chk.Stub.FedTaxYTD.Clear();
+    m_Chk.Stub.StateTax.Clear();        m_Chk.Stub.StateTaxYTD.Clear();
+    m_Chk.Stub.Fica.Clear();            m_Chk.Stub.FicaYTD.Clear();
+    m_Chk.Stub.Medicare.Clear();        m_Chk.Stub.MedicareYTD.Clear();
+
+    m_Chk.Stub.VacationTime.Clear();    m_Chk.Stub.VacationRemain.Clear();
+    m_Chk.Stub.SickTime.Clear();        m_Chk.Stub.SickRemain.Clear();
+    m_Chk.Stub.PersonalTime.Clear();    m_Chk.Stub.PersonalRemain.Clear();
+    m_Chk.Stub.OtherTime.Clear();       m_Chk.Stub.OtherRemain.Clear();
+ 
+    for (Index=0; Index < PAYLP_MAX_DED_LINES; Index++)
+    {
+        m_Chk.Stub.Deduct[Index].Code.Clear();
+        m_Chk.Stub.Deduct[Index].Amt.Clear();
+        m_Chk.Stub.Deduct[Index].AmtYTD.Clear();
+        m_Chk.Stub.Deduct[Index].Balance.Clear();
+    }
+
+    m_Chk.Stub.Earnings.Clear();   m_Chk.Stub.EarningsYTD.Clear();
+    m_Chk.Stub.NetPay.Clear();     m_Chk.Stub.NetPayYTD.Clear();
+    m_Chk.Stub.MaritalStatus.Clear();
+    m_Chk.Stub.Allowances.Clear();
+    m_Chk.Stub.CostCenter.Clear();
+    m_Chk.Stub.Msg1.Clear();
+    m_Chk.Stub.Msg2.Clear();
+    m_Chk.Stub.Location.Clear();
+
+    //--- Clear body area
+    m_Chk.Body.Date.Clear();
+    m_Chk.Body.ChkNum.Clear();
+    m_Chk.Body.Amt.Clear();
+    m_Chk.Body.SpellAmt[0].Clear();
+    m_Chk.Body.SpellAmt[1].Clear();
+    m_Chk.Body.PayToName.Clear();
+
+    for (Index=0; Index < PAYLP_MAX_ADDR_LINES; Index++)
+      m_Chk.Body.PayToAddr[Index].Clear();
+}
+
+
+void GemPayLP_T::m_W2Clear()
+{
+    for (int i=0; i < PAYLP_MAX_W2_PER_PAGE; i++)
+    {
+        m_W2[i].Control.Clear();
+        m_W2[i].FedID.Clear();
+        m_W2[i].FedWages.Clear();      
+        m_W2[i].FedTax.Clear();
+        m_W2[i].FicaWages.Clear();     
+        m_W2[i].FicaTax.Clear();
+        m_W2[i].OrgName.Clear();
+        m_W2[i].OrgAddr[0].Clear();    
+        m_W2[i].OrgAddr[1].Clear();
+        m_W2[i].OrgCityState.Clear();    
+        m_W2[i].OrgZipCode.Clear();
+        m_W2[i].MedWages.Clear();      
+        m_W2[i].MedTax.Clear();
+        m_W2[i].SocSecNum.Clear();
+        m_W2[i].EIC.Clear();
+        m_W2[i].Fringe.Clear();
+        m_W2[i].DepCare.Clear();
+        m_W2[i].EmpName.Clear();
+        m_W2[i].EmpAddr[0].Clear();    
+        m_W2[i].EmpAddr[1].Clear();
+        m_W2[i].EmpAddr[2].Clear();    
+        m_W2[i].EmpZipCode.Clear();
+		m_W2[i].Box12Code[0].Clear();      m_W2[i].Box12Amt[0].Clear();
+        m_W2[i].Box12Code[1].Clear();      m_W2[i].Box12Amt[1].Clear();
+        m_W2[i].Box12Code[2].Clear();      m_W2[i].Box12Amt[2].Clear();
+        m_W2[i].Box12Code[3].Clear();      m_W2[i].Box12Amt[3].Clear();
+        m_W2[i].Box14Code[0].Clear();      m_W2[i].Box14Amt[0].Clear();
+        m_W2[i].Box14Code[1].Clear();      m_W2[i].Box14Amt[1].Clear();
+        m_W2[i].Box14Code[2].Clear();      m_W2[i].Box14Amt[2].Clear();
+		m_W2[i].Box14Code[3].Clear();      m_W2[i].Box14Amt[3].Clear();
+        m_W2[i].PensionFlag.Clear();
+        m_W2[i].SubTotalFlag.Clear();
+        m_W2[i].DefCompFlag.Clear();
+        m_W2[i].StateName.Clear();
+        m_W2[i].StateID.Clear();
+        m_W2[i].StateWages.Clear();    
+        m_W2[i].StateTax.Clear();
+		m_W2[i].EmpFName.Clear();
+    }
+}
+
+
+void GemPayLP_T::m_1099Clear()
+{
+    for (int i=0; i < PAYLP_MAX_1099_PER_PAGE; i++)
+    {
+        m_1099[i].PayerFedID.Clear();
+        m_1099[i].PayerStateID.Clear();
+        m_1099[i].PayerName.Clear();
+        m_1099[i].PayerAddr[0].Clear();
+        m_1099[i].PayerAddr[1].Clear();
+        m_1099[i].PayerAddr[2].Clear();
+        m_1099[i].RecipFedID.Clear();
+        m_1099[i].RecipName.Clear();
+        m_1099[i].RecipAddr[0].Clear();
+        m_1099[i].RecipAddr[1].Clear();
+        m_1099[i].RecipAddr[2].Clear();
+        m_1099[i].FedTax.Clear();
+        m_1099[i].NonEmpComp.Clear();
+		m_1099[i].Filter1099.Clear();
+		m_1099[i].Rents.Clear();
+    }
+}
+
+
+void GemPayLP_T::m_TemplateClear()
+{
+    LB_Word_T     Index;
+
+    m_Template.LoadedFlag = LB_FALSE;
+    m_Template.FileName.Clear();
+    m_Template.AttrTitle.Clear();
+    m_Template.AttrDesc.Clear();
+    m_Template.AttrComments.Clear();
+    m_Template.AttrCrpeRptName.Clear();
+    m_Template.AttrRptType.Clear();
+    m_Template.AttrRptFontName.Clear();
+    m_Template.AttrRptFontSize.Clear();
+	m_Template.AttrFilter1099.Clear();
+    m_Template.AttrSingleEntry.Clear();
+	m_Template.AttrDoubleEntry.Clear();
+
+    for (Index=0; Index < PAYLP_MAX_CKT_LINES; Index++)
+        m_Template.Lines[Index].Clear();
+
+    m_Template.LineCnt = 0;
+    m_Template.LineCur = 0;
+}
+
+
+void GemPayLP_T::m_Clear()
+{
+    m_TemplateClear();
+    m_ChkClear();
+    m_W2Clear();
+    m_1099Clear();
+    m_InpFile.Close();
+    m_RptType = RPTTYPE_NONE;
+}
+
+
+//---------------------------------------------------------------
+//---                   Public  Methods                       ---
+//---------------------------------------------------------------
+GemPayLP_T::GemPayLP_T()
+{
+    m_Clear();
+}
+
+
+GemPayLP_T::~GemPayLP_T()
+{
+    PrtGenFinish();
+
+    m_Clear();
+}
+
+
+//--- Returns standard attributes retrieved by CktGetInfo method.
+LB_Bool_T GemPayLP_T::CktGetAttrValue(LB_String_T  pa_AttrName,
+                                      LB_String_T& pa_AttrValue)
+{
+    LB_String_T AttrName;
+
+    AttrName = pa_AttrName;
+    AttrName.UpperCase();
+
+    if (AttrName == "TITLE")
+    {
+        pa_AttrValue = m_Template.AttrTitle;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "DESCRIPTION")
+    {
+        pa_AttrValue = m_Template.AttrDesc;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "COMMENTS")
+    {
+        pa_AttrValue = m_Template.AttrComments;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "CRPE")
+    {
+        pa_AttrValue = m_Template.AttrCrpeRptName;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "TYPE")
+    {
+        pa_AttrValue = m_Template.AttrRptType;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "FONTNAME")
+    {
+        pa_AttrValue = m_Template.AttrRptFontName;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "FONTSIZE")
+    {
+        pa_AttrValue = m_Template.AttrRptFontSize;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "FILTER1099")
+    {
+        pa_AttrValue = m_Template.AttrFilter1099;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "SINGLEENTRY")
+    {
+        pa_AttrValue = m_Template.AttrSingleEntry;
+        return (LB_TRUE);
+    }
+    else if (AttrName == "DOUBLEENTRY")
+    {
+        pa_AttrValue = m_Template.AttrDoubleEntry;
+        return (LB_TRUE);
+    }
+
+    return (LB_FALSE);
+}
+
+
+LB_Bool_T GemPayLP_T::CktGetInfo(LB_String_T& pa_FN,
+                                 LB_String_T& pa_Name,
+                                 LB_String_T& pa_Desc,
+                                 LB_String_T& pa_Comments)
+{
+    if (m_Template.LoadedFlag == LB_FALSE)
+    {
+        if (CktLoad() == LB_FALSE)
+            return (LB_FALSE);
+    }
+
+    pa_FN       = m_Template.FileName;
+    pa_Name     = m_Template.AttrTitle;
+    pa_Desc     = m_Template.AttrDesc;
+    pa_Comments = m_Template.AttrComments;
+
+    return (LB_TRUE);
+}
+
+
+LB_Bool_T GemPayLP_T::CktLoad()
+{
+    LB_Fio_T      InpFile;
+    LB_String_T   InpLine;
+    LB_String_T   AttrName;
+    LB_Bool_T     AttrFound;
+    LB_String_T   SettingsInfo(sizeof(m_CktFileInfo));
+    LB_String_T   SettingsFN;
+
+    SettingsFN = PAYLP_SETFILENAME;
+    InpFile.SetFileName(SettingsFN);
+    if (InpFile.Exists() == LB_FALSE)
+        return (LB_FALSE);
+
+    //--- Initialize settings structure
+    memset(&m_CktFileInfo,' ',sizeof(m_CktFileInfo));
+    m_CktFileInfo.Cr         = 0x0D;
+    m_CktFileInfo.DeleteFlag = 0x0A;
+
+    //--- Initialize attribute fields
+    m_RptType = RPTTYPE_CHK;
+    m_TemplateClear();
+
+    //--- Open  settings file
+    if (InpFile.Open(FIO_OM_RO_BUF) == LB_FALSE)
+        return (LB_FALSE);
+
+    //--- Read  settings file
+    SettingsInfo.PadRight((LB_Word_T) sizeof(m_CktFileInfo),' ');
+    if (InpFile.Read(SettingsInfo) != sizeof(m_CktFileInfo))
+    {
+        InpFile.Close();
+        return (LB_FALSE);
+    }
+
+    //--- Close settings file
+    InpFile.Close();
+
+    //--- Parse settings structure to get template file name
+    SettingsInfo.GetBytes((LB_Byte_T *) &m_CktFileInfo,sizeof(m_CktFileInfo));
+    m_Template.FileName.SetBytes(m_CktFileInfo.CktFileName,sizeof(m_CktFileInfo.CktFileName));
+    m_Template.FileName.Trim();
+
+    //--- Open template file
+    InpFile.SetFileName(m_Template.FileName);
+
+    if (InpFile.Exists() == LB_FALSE)
+        return (LB_FALSE);
+
+    if (InpFile.Open(FIO_OM_RO_NOBUF) == LB_FALSE)
+        return (LB_FALSE);
+
+    //--- Read template descriptive name
+    m_Template.AttrTitle.PadRight(MAX_LINESIZE, ' ');
+    InpFile.ReadLine(m_Template.AttrTitle);
+    if (m_Template.AttrTitle.Size() > 0)
+        m_Template.AttrTitle[0] = ' ';
+    m_Template.AttrTitle.Trim();
+
+    //--- Read template description
+    m_Template.AttrDesc.PadRight(MAX_LINESIZE, ' ');
+    InpFile.ReadLine(m_Template.AttrDesc);
+    if (m_Template.AttrDesc.Size() > 0)
+        m_Template.AttrDesc[0] = ' ';
+    m_Template.AttrDesc.Trim();
+
+    //--- Read template comments
+    m_Template.AttrComments.PadRight(MAX_LINESIZE, ' ');
+    InpFile.ReadLine(m_Template.AttrComments);
+    if (m_Template.AttrComments.Size() > 0)
+        m_Template.AttrComments[0] = ' ';
+    m_Template.AttrComments.Trim();
+
+    //--- Get Crystal Reports filename and type (optional parameters)
+    while (InpFile.IsEOF() == LB_FALSE)
+    {
+        InpLine.PadRight(MAX_LINESIZE,' ');
+        InpFile.ReadLine(InpLine);
+
+        //--- If not a blank line, then check to see if the line is a comment
+        //--- and if so then skip the line.
+        if (InpLine.Size() > 0)
+        {
+            //--- If comment line, then skip
+            if (InpLine[0] == ';')
+                continue;
+
+            //--- Get Attribute Name, if one exists at the start of the line
+            AttrName.Clear();
+            AttrFound = LB_FALSE;
+            for (int i=0; i < InpLine.Size(); i++)
+            {
+                char ch;
+
+                ch = InpLine[i];
+
+                if (isalnum(ch))
+                    AttrName.Append(ch);
+                else if (ch == '=')
+                {
+                    AttrFound = LB_TRUE;
+                    break;
+                }
+                else
+                    break;
+            }
+
+            //--- Attribute not found on this line and it is not a comment
+            //--- line, so add as part of template definition
+            if (AttrFound == LB_FALSE)
+            {
+                if (m_Template.LineCnt < PAYLP_MAX_CKT_LINES)
+                {
+                    m_Template.Lines[m_Template.LineCnt] = InpLine;
+                    m_Template.LineCnt++;
+                }
+
+                continue;
+            }
+            else
+            {
+
+                //--- Attribute found, so begin processing
+                AttrName.UpperCase();
+
+                //--- Get Attribute Value
+                if (AttrName == "CRPE")
+                {
+                    m_Template.AttrCrpeRptName = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+
+                    //--- Check type is the default. If a CRPE= line is
+                    //--- found, assume CRPE report is for check, unless
+                    //--- the type attribute has already been found.
+                    if (m_RptType == RPTTYPE_CHK)
+                        m_RptType = RPTTYPE_CHK_CRPE;
+                    else if (m_RptType == RPTTYPE_NOD)
+                        m_RptType = RPTTYPE_NOD_CRPE;
+                    else if (m_RptType == RPTTYPE_W2)
+                        m_RptType = RPTTYPE_W2_CRPE;
+                }
+                else if (AttrName == "TYPE")
+                {
+                    m_Template.AttrRptType = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+
+                    if (m_Template.AttrRptType == "CHECK")
+                    {
+                        m_RptType = RPTTYPE_CHK;
+                        if (m_Template.AttrCrpeRptName.Size() > 0)
+                            m_RptType = RPTTYPE_CHK_CRPE;
+                    }
+                    else if (m_Template.AttrRptType == "NOD")
+                    {
+                        m_RptType = RPTTYPE_NOD;
+                        if (m_Template.AttrCrpeRptName.Size() > 0)
+                            m_RptType = RPTTYPE_NOD_CRPE;
+                    }
+                    else if (m_Template.AttrRptType == "W2")
+                    {
+                        m_RptType = RPTTYPE_W2;
+                        if (m_Template.AttrCrpeRptName.Size() > 0)
+                            m_RptType = RPTTYPE_W2_CRPE;
+                    }
+                    else if (m_Template.AttrRptType == "1099")
+                    {
+                        m_RptType = RPTTYPE_1099;
+                        if (m_Template.AttrCrpeRptName.Size() > 0)
+                            m_RptType = RPTTYPE_1099_CRPE;
+                    }
+
+                }
+                else if (AttrName == "FONTNAME")
+                {
+                    m_Template.AttrRptFontName = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+                }
+                else if (AttrName == "FONTSIZE")
+                {
+                    m_Template.AttrRptFontSize = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+                }
+                else if (AttrName == "FILTER1099")
+                {
+                    m_Template.AttrFilter1099 = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+                }
+                else if (AttrName == "SINGLEENTRY")
+                {
+                    m_Template.AttrSingleEntry = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+                }
+                else if (AttrName == "DOUBLEENTRY")
+                {
+                    m_Template.AttrDoubleEntry = InpLine.SubstrMid(AttrName.Size() +1, InpLine.Size());
+                }
+            }
+        }
+        else
+        {
+            //--- Add blank line to template definition
+            if (m_Template.LineCnt < PAYLP_MAX_CKT_LINES)
+            {
+                m_Template.Lines[m_Template.LineCnt] = InpLine;
+                m_Template.LineCnt++;
+            }
+        }
+    }
+
+    //--- Close template file
+    InpFile.Close();
+
+    m_Template.LoadedFlag = LB_TRUE;
+
+    return (LB_TRUE);
+}
+
+
+//--- Determine if this will be a Crystal Reports report, and if so, pass
+//--- back the name of the report file.
+LB_Bool_T GemPayLP_T::CktGetCrpeRptName(LB_String_T& pa_CrpeRptName)
+{
+    pa_CrpeRptName.Clear();
+
+    if ((m_RptType != RPTTYPE_CHK_CRPE) &&
+        (m_RptType != RPTTYPE_NOD_CRPE))
+        return (LB_FALSE);
+
+    pa_CrpeRptName = m_Template.AttrCrpeRptName;
+
+    return (LB_TRUE);
+}
+
+
+//--- If no check template file specified, then read the payroll print
+//--- settings file for the name of the file. If the settings file
+//--- does not exist, then check if the standard check template is available.
+//--- If it is, then create a settings file with the default template and
+//--- return TRUE; FALSE otherwise.
+LB_Bool_T GemPayLP_T::CktStoreFileName(LB_String_T& pa_CktFileName)
+{
+    LB_Fio_T      File;
+    LB_String_T   SettingsInfo(sizeof(m_CktFileInfo));
+    LB_String_T   SettingsFN;
+
+    //--- Force template to be reloaded on next CktGetInfo call
+    m_TemplateClear();
+
+    m_Template.FileName = pa_CktFileName;
+
+    //--- No check template file specified
+    if (m_Template.FileName.Size() == 0)
+    {
+        //--- Check to see if standard template exists
+        m_Template.FileName = PAYLP_CKTFILENAME;
+        File.SetFileName(m_Template.FileName);
+        if (File.Exists() == LB_FALSE)
+            //--- Standard template does not exist
+            return (LB_FALSE);
+
+        //--- Initialize settings structure
+        memset(&m_CktFileInfo,' ',sizeof(m_CktFileInfo));
+        m_CktFileInfo.Cr         = 0x0D;
+        m_CktFileInfo.DeleteFlag = 0x0A;
+
+        SettingsFN = PAYLP_SETFILENAME;
+        File.SetFileName(SettingsFN);
+
+        //--- Settings file does not exist
+        if (File.Exists() == LB_FALSE)
+        {
+            //--- Create default settings file
+            m_Template.FileName.GetBytes(m_CktFileInfo.CktFileName,sizeof(m_CktFileInfo.CktFileName));
+            SettingsInfo.SetBytes((LB_Byte_T *) &m_CktFileInfo,(LB_Word_T) sizeof(m_CktFileInfo));
+
+            if (File.Create() == LB_FALSE)
+            {
+                m_Template.FileName.Clear();
+                return (LB_FALSE);
+            }
+
+            if (File.Open(FIO_OM_RW_NOBUF) == LB_FALSE)
+            {
+                m_Template.FileName.Clear();
+                return (LB_FALSE);
+            }
+
+            File.Write(SettingsInfo);
+            File.Close();
+        }
+        else
+        {
+            //--- Settings file does exist, so read in the template name
+            SettingsFN = PAYLP_SETFILENAME;
+            File.SetFileName(SettingsFN);
+
+            if (File.Open(FIO_OM_RO_BUF) == LB_FALSE)
+                return (LB_FALSE);
+
+            SettingsInfo.PadRight((LB_Word_T) sizeof(m_CktFileInfo),' ');
+            if (File.Read(SettingsInfo) != sizeof(m_CktFileInfo))
+            {
+                File.Close();
+                return (LB_FALSE);
+            }
+
+            File.Close();
+
+            SettingsInfo.GetBytes((LB_Byte_T *) &m_CktFileInfo,sizeof(m_CktFileInfo));
+
+            m_Template.FileName.SetBytes(m_CktFileInfo.CktFileName,sizeof(m_CktFileInfo.CktFileName));
+            m_Template.FileName.Trim();
+        }
+    }
+    else
+    {
+        //--- A template name was specified, so save it.
+
+        //--- Check to see if template file exists before storing it
+        File.SetFileName(m_Template.FileName);
+        if (File.Exists() == LB_FALSE)
+            return (LB_FALSE);
+
+        //--- Initialize settings structure
+        memset(&m_CktFileInfo,' ',sizeof(m_CktFileInfo));
+        m_CktFileInfo.Cr         = 0x0D;
+        m_CktFileInfo.DeleteFlag = 0x0A;
+
+        //--- Create new default template
+        m_Template.FileName.GetBytes(m_CktFileInfo.CktFileName,sizeof(m_CktFileInfo.CktFileName));
+        SettingsInfo.SetBytes((LB_Byte_T *) &m_CktFileInfo,(LB_Word_T) sizeof(m_CktFileInfo));
+
+        SettingsFN = PAYLP_SETFILENAME;
+        File.SetFileName(SettingsFN);
+
+        if (File.Exists() == LB_FALSE)
+        {
+            if (File.Create() == LB_FALSE)
+            {
+                m_Template.FileName.Clear();
+                return (LB_FALSE);
+            }
+        }
+
+        if (File.Open(FIO_OM_RW_NOBUF) == LB_FALSE)
+        {
+            m_Template.FileName.Clear();
+            return (LB_FALSE);
+        }
+
+        File.Write(SettingsInfo);
+        File.Close();
+    }
+
+    return (LB_TRUE);
+}
+
+
+void GemPayLP_T::PrtGenFinish()
+{
+    m_InpFile.Close();
+    m_ChkClear();
+    m_W2Clear();
+    m_1099Clear();
+}
+
+
+//--- Note: CktGetInfo method MUST be called prior to calling this method
+LB_Bool_T GemPayLP_T::PrtGenStart()
+{
+    LB_String_T   InpFN;
+
+    m_InpFile.Close();
+
+    //--- See if template has been loaded, and if not then load it
+    if (m_Template.LoadedFlag == LB_FALSE)
+    {
+        if (CktLoad() == LB_FALSE)
+            return (LB_FALSE);
+    }
+
+    //--- No template lines to process
+    if (m_Template.LineCnt == 0)
+    {
+        return (LB_FALSE);
+    }
+
+
+    m_Template.LineCur = m_Template.LineCnt + 1;
+
+    //--- Set data input filename
+    if ((m_RptType == RPTTYPE_CHK) ||
+        (m_RptType == RPTTYPE_CHK_CRPE))
+    {
+        InpFN = PAYLP_CHKFILENAME;
+    }
+    else if ((m_RptType == RPTTYPE_NOD) ||
+             (m_RptType == RPTTYPE_NOD_CRPE))
+    {
+        InpFN = PAYLP_NODFILENAME;
+    }
+    else if ((m_RptType == RPTTYPE_W2) ||
+             (m_RptType == RPTTYPE_W2_CRPE))
+    {
+        InpFN = PAYLP_W2FILENAME;
+    }
+    else if ((m_RptType == RPTTYPE_1099) ||
+             (m_RptType == RPTTYPE_1099_CRPE))
+    {
+        InpFN = PAYLP_1099FILENAME;
+    }
+
+
+    //--- Open the check data file
+    m_InpFile.SetFileName(InpFN);
+
+    return (m_InpFile.Open(FIO_OM_RO_BUF));
+}
+
+
+LB_Word_T GemPayLP_T::PrtGenLoadNextItem(LB_String_T& pa_DisplayInfo)
+{
+    LB_Word_T       Index;
+    LB_Word_T       LineNum;
+    LB_Word_T       FormIdx;
+    LB_String_T     InpLine;
+    LB_String_T     String;
+
+    pa_DisplayInfo.Clear();
+
+    //--- Clear prior info
+    switch(m_RptType)
+    {
+        case RPTTYPE_CHK:
+        case RPTTYPE_CHK_CRPE:
+        case RPTTYPE_NOD:
+        case RPTTYPE_NOD_CRPE:
+            m_ChkClear();
+            break;
+
+        case RPTTYPE_W2:
+        case RPTTYPE_W2_CRPE:
+            m_W2Clear();
+            break;
+
+        case RPTTYPE_1099:
+        case RPTTYPE_1099_CRPE:
+            m_1099Clear();
+            break;
+    }
+
+    if (m_InpFile.IsEOF() == LB_TRUE)
+        return (PAYLP_STAT_EOF);
+
+    InpLine.PadRight(MAX_LINESIZE,' ');
+    InpLine.Fill(' ');
+    m_InpFile.ReadLine(InpLine);
+    if (InpLine != "***")
+	return (PAYLP_STAT_EOF);
+
+    //--- Load information
+    if ((m_RptType == RPTTYPE_CHK)      || 
+        (m_RptType == RPTTYPE_CHK_CRPE) ||
+        (m_RptType == RPTTYPE_NOD)      || 
+        (m_RptType == RPTTYPE_NOD_CRPE))
+    {
+        for (LineNum=1; LineNum <= 67; LineNum++)
+        {
+            //--- Read next line from input file
+            InpLine.PadRight(MAX_LINESIZE,' ');
+            m_InpFile.ReadLine(InpLine);
+            InpLine.PadRight(MAX_LINESIZE,' ');
+
+            //--- Parse data based on current item line number (not current
+            //--- line number in file)
+            {
+                switch(LineNum)
+                {
+                    case 1:
+                        m_Chk.Stub.EmpNum = InpLine.SubstrMid(0,  7);
+                        m_Chk.Stub.EmpNum.Trim();
+                        m_Chk.Stub.EmpNum.PadLeft(7, ' ');
+                        break;
+
+                    case 2:
+                        m_Chk.Stub.EmpName = InpLine.SubstrMid(0, 30);
+                        break;
+
+                    case 3:
+                        m_Chk.Stub.SocSecNum = InpLine.SubstrMid(0, 11);
+                        break;
+
+                    case 4:
+                        m_Chk.Stub.PeriodEnd = InpLine.SubstrMid(0, 8);
+                        break;
+
+                    case 5:
+                        m_Chk.Stub.DateIssued = InpLine.SubstrMid(0, 8);
+                        break;
+
+                    case 6:
+                        m_Chk.Stub.ChkNum = InpLine.SubstrMid(0,  7);
+                        m_Chk.Stub.ChkNum.Trim();
+                        m_Chk.Stub.ChkNum.PadLeft(7, ' ');
+                        break;
+
+                    case 7:    case 8:   case  9:  case 10:
+                    case 11:   case 12:  case 13:  case 14:
+                    case 15:   case 16:  case 17:  case 18:
+                        m_Chk.Stub.Earn[LineNum-7].Code   = InpLine.SubstrMid(0,  10);
+                        m_Chk.Stub.Earn[LineNum-7].Hours  = InpLine.SubstrMid(10,  8);
+                        m_Chk.Stub.Earn[LineNum-7].Rate   = InpLine.SubstrMid(18, 11);
+                        m_Chk.Stub.Earn[LineNum-7].Amt    = InpLine.SubstrMid(29, 11);
+
+                        m_Chk.Stub.Earn[LineNum-7].Hours.Trim();  m_Chk.Stub.Earn[LineNum-7].Hours.PadLeft(8, ' ');
+                        m_Chk.Stub.Earn[LineNum-7].Rate.Trim();   m_Chk.Stub.Earn[LineNum-7].Rate.PadLeft(11, ' ');
+                        m_Chk.Stub.Earn[LineNum-7].Amt.Trim();    m_Chk.Stub.Earn[LineNum-7].Amt.PadLeft(11, ' ');
+                        break;
+
+                    case 19:
+                        m_Chk.Stub.FedTax    = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.FedTaxYTD = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.FedTax.Trim();     m_Chk.Stub.FedTax.PadLeft(11, ' ');
+                        m_Chk.Stub.FedTaxYTD.Trim();  m_Chk.Stub.FedTaxYTD.PadLeft(11, ' ');
+                        break;
+
+                    case 20:
+                        m_Chk.Stub.StateTax    = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.StateTaxYTD = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.StateTax.Trim();     m_Chk.Stub.StateTax.PadLeft(11, ' ');
+                        m_Chk.Stub.StateTaxYTD.Trim();  m_Chk.Stub.StateTaxYTD.PadLeft(11, ' ');
+                        break;
+
+                    case 21:
+                        m_Chk.Stub.Fica    = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.FicaYTD = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.Fica.Trim();     m_Chk.Stub.Fica.PadLeft(11, ' ');
+                        m_Chk.Stub.FicaYTD.Trim();  m_Chk.Stub.FicaYTD.PadLeft(11, ' ');
+                        break;
+
+                    case 22:
+                        m_Chk.Stub.Medicare    = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.MedicareYTD = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.Medicare.Trim();     m_Chk.Stub.Medicare.PadLeft(11, ' ');
+                        m_Chk.Stub.MedicareYTD.Trim();  m_Chk.Stub.MedicareYTD.PadLeft(11, ' ');
+                        break;
+
+                    case 23:
+                        m_Chk.Stub.VacationTime   = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.VacationRemain = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.VacationTime.Trim();    m_Chk.Stub.VacationTime.PadLeft(11, ' ');
+                        m_Chk.Stub.VacationRemain.Trim();  m_Chk.Stub.VacationRemain.PadLeft(11, ' ');
+                        break;
+
+                    case 24:
+                        m_Chk.Stub.SickTime    = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.SickRemain  = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.SickTime.Trim();    m_Chk.Stub.SickTime.PadLeft(11, ' ');
+                        m_Chk.Stub.SickRemain.Trim();  m_Chk.Stub.SickRemain.PadLeft(11, ' ');
+                        break;
+
+                    case 25:
+                        m_Chk.Stub.PersonalTime   = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.PersonalRemain = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.PersonalTime.Trim();    m_Chk.Stub.PersonalTime.PadLeft(11, ' ');
+                        m_Chk.Stub.PersonalRemain.Trim();  m_Chk.Stub.PersonalRemain.PadLeft(11, ' ');
+                        break;
+
+                    case 26:
+                        m_Chk.Stub.OtherTime   = InpLine.SubstrMid(0,  11);
+                        m_Chk.Stub.OtherRemain = InpLine.SubstrMid(11, 11);
+
+                        m_Chk.Stub.OtherTime.Trim();    m_Chk.Stub.OtherTime.PadLeft(11, ' ');
+                        m_Chk.Stub.OtherRemain.Trim();  m_Chk.Stub.OtherRemain.PadLeft(11, ' ');
+                        break;
+
+                    case 27:  case 28:  case 29:  case 30:
+                    case 31:  case 32:  case 33:  case 34:
+                    case 35:  case 36:  case 37:  case 38:
+                    case 39:  case 40:  case 41:  case 42:
+                    case 43:  case 44:  case 45:  case 46:
+                        m_Chk.Stub.Deduct[LineNum-27].Code    = InpLine.SubstrMid(0,   3);
+                        m_Chk.Stub.Deduct[LineNum-27].Amt     = InpLine.SubstrMid(3,  11);
+                        m_Chk.Stub.Deduct[LineNum-27].AmtYTD  = InpLine.SubstrMid(14, 11);
+                        m_Chk.Stub.Deduct[LineNum-27].Balance = InpLine.SubstrMid(25, 11);
+
+                        m_Chk.Stub.Deduct[LineNum-27].Amt.Trim();      m_Chk.Stub.Deduct[LineNum-27].Amt.PadLeft(11, ' ');
+                        m_Chk.Stub.Deduct[LineNum-27].AmtYTD.Trim();   m_Chk.Stub.Deduct[LineNum-27].AmtYTD.PadLeft(11, ' ');
+                        m_Chk.Stub.Deduct[LineNum-27].Balance.Trim();  m_Chk.Stub.Deduct[LineNum-27].Balance.PadLeft(11, ' ');
+                        break;
+
+                    case 47:
+                        m_Chk.Stub.Earnings = InpLine.SubstrMid(0, 11);
+                        m_Chk.Stub.Earnings.Trim();
+                        m_Chk.Stub.Earnings.PadLeft(11, ' ');
+                        break;
+
+                    case 48:
+                        m_Chk.Stub.EarningsYTD = InpLine.SubstrMid(0, 11);
+                        m_Chk.Stub.EarningsYTD.Trim();
+                        m_Chk.Stub.EarningsYTD.PadLeft(11, ' ');
+                        break;
+
+                    case 49:
+                        m_Chk.Stub.NetPay = InpLine.SubstrMid(0, 11);
+                        m_Chk.Stub.NetPay.Trim();
+                        m_Chk.Stub.NetPay.PadLeft(11, ' ');
+                        break;
+
+                    case 50:
+                        m_Chk.Stub.NetPayYTD = InpLine.SubstrMid(0, 11);
+                        m_Chk.Stub.NetPayYTD.Trim();
+                        m_Chk.Stub.NetPayYTD.PadLeft(11, ' ');
+                        break;
+
+                    case 51:
+                        m_Chk.Stub.MaritalStatus = InpLine.SubstrMid(0, 1);
+                        break;
+
+                    case 52:
+                        m_Chk.Stub.Allowances = InpLine.SubstrMid(0, 2);
+                        m_Chk.Stub.Allowances.Trim();
+                        m_Chk.Stub.Allowances.PadLeft(2, ' ');
+                        break;
+
+                    case 53:
+                        m_Chk.Stub.CostCenter = InpLine.SubstrMid(0, 5);
+                        m_Chk.Stub.CostCenter.Trim();
+                        m_Chk.Stub.CostCenter.PadRight(5, ' ');
+                        break;
+
+                    case 54:
+                        m_Chk.Body.Date = InpLine.SubstrMid(0, 8);
+                        break;
+
+                    case 55:
+                        m_Chk.Body.ChkNum = InpLine.SubstrMid(0, 6);
+                        m_Chk.Body.ChkNum.Trim();
+                        m_Chk.Body.ChkNum.PadLeft(6, ' ');
+                        break;
+
+                    case 56:
+                        m_Chk.Body.Amt = InpLine.SubstrMid(0, 14);
+                        break;
+
+                    case 57:
+                        m_Chk.Body.SpellAmt[0] = InpLine.SubstrMid(0, 55);
+                        m_Chk.Body.SpellAmt[0].Trim();
+                        m_Chk.Body.SpellAmt[0].PadRight(55, ' ');
+                        break;
+
+                    case 58:
+                        m_Chk.Body.SpellAmt[1] = InpLine.SubstrMid(0, 55);
+                        m_Chk.Body.SpellAmt[1].Trim();
+                        m_Chk.Body.SpellAmt[1].PadRight(55, ' ');
+                        break;
+
+                    case 59:
+                        m_Chk.Body.PayToName = InpLine.SubstrMid(0, 30);
+                        break;
+
+                    case 60:
+                    case 61:
+                    case 62:
+                    case 63:
+                    case 64:
+                        m_Chk.Body.PayToAddr[LineNum-60] = InpLine.SubstrMid(0, 30);
+                        break;
+
+                    case 65:
+                        m_Chk.Stub.Msg1 = InpLine.SubstrMid(0, 40);
+                        break;
+
+                    case 66:
+                        m_Chk.Stub.Msg2 = InpLine.SubstrMid(0, 40);
+                        break;
+
+                    case 67:
+                        m_Chk.Stub.Location = InpLine.SubstrMid(0, 5);
+                        break;
+                }
+
+            }
+        }
+
+        //--- Return status back
+        if ((m_RptType == RPTTYPE_NOD) || (m_RptType == RPTTYPE_NOD_CRPE))
+        {
+            LB_String_T EmpNum;
+
+            EmpNum = m_Chk.Stub.EmpNum;
+            EmpNum.Trim();
+
+            pa_DisplayInfo = " for employee #";
+            pa_DisplayInfo = pa_DisplayInfo + EmpNum;
+            pa_DisplayInfo.Trim();
+        }
+        else
+        {
+            //--- Return current check number
+            pa_DisplayInfo = m_Chk.Body.ChkNum;
+            pa_DisplayInfo.Trim();
+        }
+    }
+    else if ((m_RptType == RPTTYPE_W2) ||
+             (m_RptType == RPTTYPE_W2_CRPE))
+    {
+        for (FormIdx=0; FormIdx < PAYLP_MAX_W2_PER_PAGE; FormIdx++)
+        {
+            // Read one entry at a time or multiple
+            if ((m_Template.AttrSingleEntry == "YES") && (FormIdx != 0))
+                break;
+
+            if ((m_Template.AttrDoubleEntry == "YES") && (FormIdx > 1))
+                break;
+
+READ_NEXT_W2:
+            //--- Find record start marker
+	    while (InpLine != "***")
+	    {
+	        if (m_InpFile.IsEOF() == LB_TRUE)
+		{
+		    return (PAYLP_STAT_EOF);
+		}
+		else
+		{
+		    InpLine.PadRight(MAX_LINESIZE,' ');
+		    InpLine.Fill(' ');
+		    m_InpFile.ReadLine(InpLine);
+		}
+            }
+
+   	    for (LineNum=1; LineNum <= 38; LineNum++)
+	    {   
+		//--- Read next line from input file
+		if (m_InpFile.IsEOF() == LB_TRUE)
+			break;
+
+           	InpLine.PadRight(MAX_LINESIZE,' ');
+		m_InpFile.ReadLine(InpLine);
+		InpLine.PadRight(MAX_LINESIZE,' ');
+
+		//--- Parse data based on current item line number (not current
+		//--- line number in file)
+                switch(LineNum)
+                {
+                    case 1:
+                        m_W2[FormIdx].Control = InpLine.SubstrMid(0, 8);
+                        m_W2[FormIdx].Control.Trim();        
+                        m_W2[FormIdx].Control.PadLeft(8, ' ');
+                        break;
+
+                    case 2:
+                        m_W2[FormIdx].FedID = InpLine.SubstrMid(0, 10);
+                        m_W2[FormIdx].FedID.Trim();          
+                        m_W2[FormIdx].FedID.PadLeft(10, ' ');
+                        break;
+
+                    case 3:
+                        m_W2[FormIdx].FedWages = InpLine.SubstrMid(0, 15);
+                        m_W2[FormIdx].FedWages.Trim();       
+                        m_W2[FormIdx].FedWages.PadLeft(15, ' ');
+                        break;
+
+                    case 4:
+                        m_W2[FormIdx].FedTax = InpLine.SubstrMid(0, 14);
+                        m_W2[FormIdx].FedTax.Trim();         
+                        m_W2[FormIdx].FedTax.PadLeft(14, ' ');
+                        break;
+
+                    case 5:
+                        m_W2[FormIdx].FicaWages = InpLine.SubstrMid(0, 15);
+                        m_W2[FormIdx].FicaWages.Trim();      
+                        m_W2[FormIdx].FicaWages.PadLeft(15, ' ');
+                        break;
+
+                    case 6:
+                        m_W2[FormIdx].FicaTax = InpLine.SubstrMid(0, 14);
+                        m_W2[FormIdx].FicaTax.Trim();        
+                        m_W2[FormIdx].FicaTax.PadLeft(14, ' ');
+                        break;
+
+                    case 7:
+                        m_W2[FormIdx].OrgName = InpLine.SubstrMid(0, 32);
+                        m_W2[FormIdx].OrgName.Trim();        
+                        m_W2[FormIdx].OrgName.PadRight(32, ' ');
+                        break;
+
+
+                    case 8:
+                        m_W2[FormIdx].OrgAddr[0] = InpLine.SubstrMid(0, 32);
+                        m_W2[FormIdx].OrgAddr[0].Trim();     
+                        m_W2[FormIdx].OrgAddr[0].PadRight(32, ' ');
+                        break;
+
+                    case 9:
+                        m_W2[FormIdx].OrgAddr[1] = InpLine.SubstrMid(0, 32);
+                        m_W2[FormIdx].OrgAddr[1].Trim();     
+                        m_W2[FormIdx].OrgAddr[1].PadRight(32, ' ');
+                        break;
+
+                    case 10:
+                        m_W2[FormIdx].OrgCityState = InpLine.SubstrMid(0, 32);
+                        m_W2[FormIdx].OrgCityState.Trim();   
+                        m_W2[FormIdx].OrgCityState.PadRight(32, ' ');
+                        break;
+
+                    case 11:
+                        m_W2[FormIdx].OrgZipCode = InpLine.SubstrMid(0, 10);
+                        m_W2[FormIdx].OrgZipCode.Trim();     
+                        m_W2[FormIdx].OrgZipCode.PadRight(10, ' ');
+                        break;
+
+                    case 12:
+                        m_W2[FormIdx].MedWages = InpLine.SubstrMid(0, 15);
+                        m_W2[FormIdx].MedWages.Trim();       
+                        m_W2[FormIdx].MedWages.PadLeft(15, ' ');
+                        break;
+
+                    case 13:
+                        m_W2[FormIdx].MedTax = InpLine.SubstrMid(0, 14);
+                        m_W2[FormIdx].MedTax.Trim();         
+                        m_W2[FormIdx].MedTax.PadLeft(14, ' ');
+                        break;
+
+                    case 14:
+                        m_W2[FormIdx].SocSecNum = InpLine.SubstrMid(0, 11);
+                        m_W2[FormIdx].SocSecNum.Trim();      
+                        m_W2[FormIdx].SocSecNum.PadLeft(11, ' ');
+                        break;
+
+                    case 15:
+                        m_W2[FormIdx].EIC = InpLine.SubstrMid(0, 15);
+                        m_W2[FormIdx].EIC.Trim();            
+                        m_W2[FormIdx].EIC.PadLeft(15, ' ');
+                        break;
+
+                    case 16:
+                        m_W2[FormIdx].Fringe = InpLine.SubstrMid(0, 14);
+                        m_W2[FormIdx].Fringe.Trim();         
+                        m_W2[FormIdx].Fringe.PadLeft(14, ' ');
+                        break;
+
+                    case 17:
+                        m_W2[FormIdx].DepCare = InpLine.SubstrMid(0, 14);
+                        m_W2[FormIdx].DepCare.Trim();        
+                        m_W2[FormIdx].DepCare.PadLeft(14, ' ');
+                        break;
+
+                    case 18:
+                        m_W2[FormIdx].EmpName = InpLine.SubstrMid(0, 24);
+                        m_W2[FormIdx].EmpName.Trim();        
+                        m_W2[FormIdx].EmpName.PadRight(24, ' ');
+                        break;
+
+
+                    case 19:
+                        m_W2[FormIdx].EmpAddr[0] = InpLine.SubstrMid(0, 30);
+                        m_W2[FormIdx].EmpAddr[0].Trim();     
+                        m_W2[FormIdx].EmpAddr[0].PadRight(30, ' ');
+                        break;
+
+                    case 20:
+                        m_W2[FormIdx].EmpAddr[1] = InpLine.SubstrMid(0, 30);
+                        m_W2[FormIdx].EmpAddr[1].Trim();     
+                        m_W2[FormIdx].EmpAddr[1].PadRight(30, ' ');
+                        break;
+
+                    case 21:
+                        m_W2[FormIdx].EmpAddr[2] = InpLine.SubstrMid(0, 30);
+                        m_W2[FormIdx].EmpAddr[2].Trim();     
+                        m_W2[FormIdx].EmpAddr[2].PadRight(30, ' ');
+                        break;
+
+                    case 22:
+                        m_W2[FormIdx].EmpZipCode = InpLine.SubstrMid(0, 10);
+                        m_W2[FormIdx].EmpZipCode.Trim();     
+                        m_W2[FormIdx].EmpZipCode.PadRight(10, ' ');
+                        break;
+
+                    case 23:
+                        m_W2[FormIdx].Box12Code[0] = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].Box12Amt[0]  = InpLine.SubstrMid(1, 12);
+                        m_W2[FormIdx].Box12Amt[0].Trim();    
+                        m_W2[FormIdx].Box12Amt[0].PadLeft(12, ' ');
+                        break;
+
+                    case 24:
+                        m_W2[FormIdx].Box12Code[1] = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].Box12Amt[1]  = InpLine.SubstrMid(1, 12);
+                        m_W2[FormIdx].Box12Amt[1].Trim();    
+                        m_W2[FormIdx].Box12Amt[1].PadLeft(12, ' ');
+                        break;
+
+                    case 25:
+                        m_W2[FormIdx].Box12Code[2] = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].Box12Amt[2]  = InpLine.SubstrMid(1, 12);
+                        m_W2[FormIdx].Box12Amt[2].Trim();    
+                        m_W2[FormIdx].Box12Amt[2].PadLeft(12, ' ');
+                        break;
+
+                    case 26:
+                        m_W2[FormIdx].Box12Code[3] = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].Box12Amt[3]  = InpLine.SubstrMid(1, 12);
+                        m_W2[FormIdx].Box12Amt[3].Trim();    
+                        m_W2[FormIdx].Box12Amt[3].PadLeft(12, ' ');
+                        break;
+
+                    case 27:
+                        m_W2[FormIdx].Box14Code[0] = InpLine.SubstrMid(0, 8);
+                        m_W2[FormIdx].Box14Code[0].Trim();   
+                        m_W2[FormIdx].Box14Code[0].PadRight(8, ' ');
+
+                        m_W2[FormIdx].Box14Amt[0]  = InpLine.SubstrMid(8, 11);
+                        m_W2[FormIdx].Box14Amt[0].Trim();    
+                        m_W2[FormIdx].Box14Amt[0].PadLeft(11, ' ');
+                        break;
+
+                    case 28:
+                        m_W2[FormIdx].Box14Code[1] = InpLine.SubstrMid(0, 8);
+                        m_W2[FormIdx].Box14Code[1].Trim();   
+						m_W2[FormIdx].Box14Code[1].PadRight(8, ' ');
+
+                        m_W2[FormIdx].Box14Amt[1]  = InpLine.SubstrMid(8, 11);
+                        m_W2[FormIdx].Box14Amt[1].Trim();   
+                        m_W2[FormIdx].Box14Amt[1].PadLeft(11, ' ');
+                        break;
+
+                    case 29:
+                        m_W2[FormIdx].Box14Code[2] = InpLine.SubstrMid(0, 8);
+                        m_W2[FormIdx].Box14Code[2].Trim();   
+                        m_W2[FormIdx].Box14Code[2].PadRight(8, ' ');
+
+                        m_W2[FormIdx].Box14Amt[2]  = InpLine.SubstrMid(8, 11);
+                        m_W2[FormIdx].Box14Amt[2].Trim();   
+                        m_W2[FormIdx].Box14Amt[2].PadLeft(11, ' ');
+                        break;
+
+                    case 30:
+                        m_W2[FormIdx].PensionFlag = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].PensionFlag.Trim();   
+                        m_W2[FormIdx].PensionFlag.PadLeft(1, ' ');
+                        break;
+
+                    case 31:
+                        m_W2[FormIdx].SubTotalFlag = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].SubTotalFlag.Trim();   
+                        m_W2[FormIdx].SubTotalFlag.PadLeft(1, ' ');
+                        break;
+
+                    case 32:
+                        m_W2[FormIdx].DefCompFlag = InpLine.SubstrMid(0, 1);
+                        m_W2[FormIdx].DefCompFlag.Trim();   
+                        m_W2[FormIdx].DefCompFlag.PadLeft(1, ' ');
+                        break;
+
+                    case 33:
+                        m_W2[FormIdx].StateName = InpLine.SubstrMid(0, 5);
+                        m_W2[FormIdx].StateName.Trim();      
+                        m_W2[FormIdx].StateName.PadRight(5, ' ');
+                        break;
+
+                    case 34:
+                        m_W2[FormIdx].StateID = InpLine.SubstrMid(0, 10);
+                        m_W2[FormIdx].StateID.Trim();        
+                        m_W2[FormIdx].StateID.PadLeft(10, ' ');
+                        break;
+
+                    case 35:
+                        m_W2[FormIdx].StateWages = InpLine.SubstrMid(0, 11);
+                        m_W2[FormIdx].StateWages.Trim();     
+                        m_W2[FormIdx].StateWages.PadLeft(11, ' ');
+                        break;
+
+                    case 36:
+                        m_W2[FormIdx].StateTax = InpLine.SubstrMid(0, 10);
+                        m_W2[FormIdx].StateTax.Trim();       
+                        m_W2[FormIdx].StateTax.PadLeft(10, ' ');
+                        break;
+
+                    case 37:
+                        m_W2[FormIdx].EmpFName = InpLine.SubstrMid(0, 30);
+                        m_W2[FormIdx].EmpFName.Trim();     
+                        m_W2[FormIdx].EmpFName.PadRight(30, ' ');
+                        break;
+
+					case 38:
+                        m_W2[FormIdx].Box14Code[3] = InpLine.SubstrMid(0, 8);
+                        m_W2[FormIdx].Box14Code[3].Trim();   
+                        m_W2[FormIdx].Box14Code[3].PadRight(8, ' ');
+
+                        m_W2[FormIdx].Box14Amt[3]  = InpLine.SubstrMid(8, 11);
+                        m_W2[FormIdx].Box14Amt[3].Trim();   
+                        m_W2[FormIdx].Box14Amt[3].PadLeft(11, ' ');
+                        break;
+                }
+            }
+        }
+        pa_DisplayInfo = " - control #";
+        pa_DisplayInfo = pa_DisplayInfo + m_W2[0].Control;
+    }
+    else if ((m_RptType == RPTTYPE_1099) ||
+             (m_RptType == RPTTYPE_1099_CRPE))
+    {
+        for (FormIdx=0; FormIdx < PAYLP_MAX_1099_PER_PAGE; FormIdx++)
+        {
+            // Read one entry at a time or multiple
+            if ((m_Template.AttrSingleEntry == "YES") && (FormIdx != 0))
+                break;
+
+            if ((m_Template.AttrDoubleEntry == "YES") && (FormIdx > 1))
+                break;
+
+READ_NEXT_1099:
+	    //--- Find record start marker
+	    while (InpLine != "***")
+	    {
+	        if (m_InpFile.IsEOF() == LB_TRUE)
+		{
+		    return (PAYLP_STAT_EOF);
+		}
+		else
+		{
+		    InpLine.PadRight(MAX_LINESIZE,' ');
+		    InpLine.Fill(' ');
+		    m_InpFile.ReadLine(InpLine);
+		}
+            }
+
+            //--- Read form entry
+	    for (LineNum=1; LineNum <= 15; LineNum++)
+            {
+                //--- Read next line from input file
+		if (m_InpFile.IsEOF() == LB_TRUE)
+		    break;
+
+		InpLine.PadRight(MAX_LINESIZE,' ');
+		m_InpFile.ReadLine(InpLine);
+		InpLine.PadRight(MAX_LINESIZE,' ');
+
+                //--- Parse data based on current item line number (not current
+                //--- line number in file)
+                {
+                    switch(LineNum)
+                    {
+                        case 1:
+                            m_1099[FormIdx].PayerName = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].PayerName.Trim();    
+                            m_1099[FormIdx].PayerName.PadRight(34, ' ');
+                            break;
+
+                        case 2:
+                            m_1099[FormIdx].PayerAddr[0] = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].PayerAddr[0].Trim(); 
+                            m_1099[FormIdx].PayerAddr[0].PadRight(34, ' ');
+                            break;
+
+                        case 3:
+                            m_1099[FormIdx].PayerAddr[1] = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].PayerAddr[1].Trim(); 
+                            m_1099[FormIdx].PayerAddr[1].PadRight(34, ' ');
+                            break;
+
+                        case 4:
+                            m_1099[FormIdx].PayerAddr[2] = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].PayerAddr[2].Trim(); 
+                            m_1099[FormIdx].PayerAddr[2].PadRight(34, ' ');
+                            break;
+
+                        case 5:
+                            m_1099[FormIdx].PayerFedID = InpLine.SubstrMid(0, 17);
+                            m_1099[FormIdx].PayerFedID.Trim();   
+                            m_1099[FormIdx].PayerFedID.PadRight(17, ' ');
+                            break;
+
+                        case 6:
+                            m_1099[FormIdx].RecipFedID = InpLine.SubstrMid(0, 17);
+                            m_1099[FormIdx].RecipFedID.Trim();   
+                            m_1099[FormIdx].RecipFedID.PadRight(17, ' ');
+                            break;
+
+                        case 7:
+                            m_1099[FormIdx].RecipName = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].RecipName.Trim();    
+                            m_1099[FormIdx].RecipName.PadRight(34, ' ');
+                            break;
+
+                        case 8:
+                            m_1099[FormIdx].RecipAddr[0] = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].RecipAddr[0].Trim(); 
+                            m_1099[FormIdx].RecipAddr[0].PadRight(34, ' ');
+                            break;
+
+                        case 9:
+                            m_1099[FormIdx].RecipAddr[1] = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].RecipAddr[1].Trim(); 
+                            m_1099[FormIdx].RecipAddr[1].PadRight(34, ' ');
+                            break;
+
+                        case 10:
+                            m_1099[FormIdx].RecipAddr[2] = InpLine.SubstrMid(0, 34);
+                            m_1099[FormIdx].RecipAddr[2].Trim(); 
+                            m_1099[FormIdx].RecipAddr[2].PadRight(34, ' ');
+                            break;
+
+                        case 11:
+                            m_1099[FormIdx].FedTax = InpLine.SubstrMid(0, 14);
+                            m_1099[FormIdx].FedTax.Trim();       
+                            m_1099[FormIdx].FedTax.PadLeft(14, ' ');
+                            break;
+
+                        case 12:
+                            m_1099[FormIdx].NonEmpComp = InpLine.SubstrMid(0, 14);
+                            m_1099[FormIdx].NonEmpComp.Trim();   
+                            m_1099[FormIdx].NonEmpComp.PadLeft(14, ' ');
+                            break;
+
+                        case 13:
+                            m_1099[FormIdx].PayerStateID = InpLine.SubstrMid(0, 17);
+                            m_1099[FormIdx].PayerStateID.Trim(); 
+                            m_1099[FormIdx].PayerStateID.PadRight(17, ' ');
+                            break;
+
+                        case 14:
+                            m_1099[FormIdx].Filter1099 = InpLine.SubstrMid(0, 6);
+                            m_1099[FormIdx].Filter1099.Trim(); 
+                            break;
+
+                        case 15:
+                            m_1099[FormIdx].Rents = InpLine.SubstrMid(0, 14);
+                            m_1099[FormIdx].Rents.Trim(); 
+                            break;
+                    }
+                }
+	    }
+	    /* If filtering has been applied then make sure this record matches */
+	    if (m_Template.AttrFilter1099 != "")
+            {
+		if (m_1099[FormIdx].Filter1099 != m_Template.AttrFilter1099)
+		{
+		    if (m_InpFile.IsEOF() == LB_FALSE)
+			goto READ_NEXT_1099;
+		}
+            }
+            pa_DisplayInfo = " -  Recipient ";
+	    pa_DisplayInfo = pa_DisplayInfo + m_1099[0].RecipName;
+        }
+    }
+
+    //--- Reset template to top for next check
+    m_Template.LineCur = 0;
+
+    return (PAYLP_STAT_OK);
+}
+
+
+//--- Returns the next formatted check print line
+LB_Word_T GemPayLP_T::PrtGenBuildNextLine(LB_String_T& pa_Line)
+{
+    LB_String_T     BldLine;        //--- Build    Text Line
+    LB_String_T     CktLine;        //--- Template Text Line
+    LB_Word_T       CktLineIndex;   //--- Template
+    LB_String_T     FldName;
+    LB_String_T     FldValue;
+    LB_String_T     FldTemp;
+    LB_Word_T       Index;
+    LB_Bool_T       FoundFlag;
+
+    pa_Line.Clear();
+
+    //--- Check if no template
+    if (m_Template.LineCnt == 0)
+        return (PAYLP_STAT_EOF);
+
+    //--- Check if need next Chk
+    //------ LineCur ranges from 0..LineCnt-1
+    if (m_Template.LineCur >=  m_Template.LineCnt)
+        return (PAYLP_STAT_EOC);
+
+    BldLine.Clear();
+
+    CktLine = m_Template.Lines[m_Template.LineCur];
+
+    //--- Loop through template line until a template field is found
+    CktLineIndex = 0;
+    while (CktLineIndex < CktLine.Size())
+    {
+        //--- Loop until field found
+        while (CktLineIndex < CktLine.Size())
+        {
+            if (CktLine[CktLineIndex] == '<')
+                break;
+            else
+            {
+                BldLine.Append((LB_Byte_T) CktLine[CktLineIndex]);
+                CktLineIndex++;
+            }
+        }
+
+        if (CktLineIndex < CktLine.Size())
+        {
+            //--- Get field name
+            FldName.Clear();
+            if (CktLine[CktLineIndex] == '<')
+            {
+                CktLineIndex++;  //--- Skip past < char
+
+                while (CktLineIndex < CktLine.Size())
+                {
+                    if (CktLine[CktLineIndex] == '>')
+                        break;
+                    else
+                    {
+                        FldName.Append((LB_Byte_T) CktLine[CktLineIndex]);
+                        CktLineIndex++;
+                    }
+                }
+
+                //--- Get Field Value
+                FldValue.Clear();
+                FldName.UpperCase();
+
+                if ((m_RptType == RPTTYPE_CHK)      ||
+                    (m_RptType == RPTTYPE_CHK_CRPE) ||
+                    (m_RptType == RPTTYPE_NOD)      ||
+                    (m_RptType == RPTTYPE_NOD_CRPE))
+                {
+                    //------ Process BODY fields
+                    FldTemp = FldName.SubstrMid(0,5);
+                    if (FldTemp == "BODY.")
+                    { 
+                        if (FldName == "BODY.DATE")
+                            FldValue  = m_Chk.Body.Date;
+
+                        else if (FldName == "BODY.CHECKNUM")
+                            FldValue  = m_Chk.Body.ChkNum;
+
+                        else if (FldName == "BODY.AMT")
+                            FldValue  = m_Chk.Body.Amt;
+
+                        else if (FldName == "BODY.SPELLAMT01")
+                            FldValue  = m_Chk.Body.SpellAmt[0];
+
+                        else if (FldName == "BODY.SPELLAMT02")
+                            FldValue  = m_Chk.Body.SpellAmt[1];
+
+                        else if (FldName == "BODY.PAYTONAME")
+                            FldValue  = m_Chk.Body.PayToName;
+
+                        else if (FldName == "BODY.PAYTOADDR01")
+                            FldValue  = m_Chk.Body.PayToAddr[0];
+                        else if (FldName == "BODY.PAYTOADDR02")
+                            FldValue  = m_Chk.Body.PayToAddr[1];
+                        else if (FldName == "BODY.PAYTOADDR03")
+                            FldValue  = m_Chk.Body.PayToAddr[2];
+                        else if (FldName == "BODY.PAYTOADDR04")
+                            FldValue  = m_Chk.Body.PayToAddr[3];
+                        else if (FldName == "BODY.PAYTOADDR05")
+                            FldValue  = m_Chk.Body.PayToAddr[4];
+                        else
+                        {
+                            FldValue  = "Unknown FieldName: ";
+                            FldValue  = FldValue + FldName;
+                        }
+
+                        goto FldValueDone;
+                    }
+                    else
+                    {
+                        //------ Process STUB fields
+                        //------ Deductions
+                        FldTemp = FldName.SubstrMid(0,12);
+                        if (FldTemp == "STUB.DEDUCT.")
+                        {
+                            LB_Word_T DeductIndex;
+
+                            FldTemp = FldName.SubstrMid(0,16);
+                            if (FldTemp == "STUB.DEDUCT.CODE")
+                            {
+                                FldTemp     = FldName.SubstrMid(16,2);
+                                DeductIndex = FldTemp.AsWord();
+
+                                if ((DeductIndex >= 1) &&
+                                    (DeductIndex <= PAYLP_MAX_DED_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Deduct[DeductIndex-1].Code;
+                                }
+                            }
+
+                            FldTemp = FldName.SubstrMid(0,15);
+                            if (FldTemp == "STUB.DEDUCT.AMT")
+                            {
+                                FldTemp     = FldName.SubstrMid(15,2);
+                                DeductIndex = FldTemp.AsWord();
+
+                                if ((DeductIndex >= 1) &&
+                                    (DeductIndex <= PAYLP_MAX_DED_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Deduct[DeductIndex-1].Amt;
+                                }
+                            }
+
+                            FldTemp = FldName.SubstrMid(0,18);
+                            if (FldTemp == "STUB.DEDUCT.AMTYTD")
+                            {
+                                FldTemp     = FldName.SubstrMid(18,2);
+                                DeductIndex = FldTemp.AsWord();
+
+                                if ((DeductIndex >= 1) &&
+                                    (DeductIndex <= PAYLP_MAX_DED_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Deduct[DeductIndex-1].AmtYTD;
+                                }
+                            }
+
+                            FldTemp = FldName.SubstrMid(0,19);
+                            if (FldTemp == "STUB.DEDUCT.BALANCE")
+                            {
+                                FldTemp     = FldName.SubstrMid(19,2);
+                                DeductIndex = FldTemp.AsWord();
+
+                                if ((DeductIndex >= 1) &&
+                                    (DeductIndex <= PAYLP_MAX_DED_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Deduct[DeductIndex-1].Balance;
+                                }
+                            }
+
+                            goto FldValueDone;
+                        }
+
+                        //------ Earnings
+                        FldTemp = FldName.SubstrMid(0,10);
+                        if (FldTemp == "STUB.EARN.")
+                        {
+                            LB_Word_T EarnIndex;
+    
+                            FldTemp = FldName.SubstrMid(0,14);
+                            if (FldTemp == "STUB.EARN.CODE")
+                            {
+                                FldTemp   = FldName.SubstrMid(14,2);
+                                EarnIndex = FldTemp.AsWord();
+
+                                if ((EarnIndex >= 1) &&
+                                    (EarnIndex <= PAYLP_MAX_EARN_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Earn[EarnIndex-1].Code;
+                                }
+                            }
+
+                            FldTemp = FldName.SubstrMid(0,15);
+                            if (FldTemp == "STUB.EARN.HOURS")
+                            {
+                                FldTemp   = FldName.SubstrMid(15,2);
+                                EarnIndex = FldTemp.AsWord();
+    
+                                if ((EarnIndex >= 1) &&
+                                    (EarnIndex <= PAYLP_MAX_EARN_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Earn[EarnIndex-1].Hours;
+                                }
+                            }
+
+                            FldTemp = FldName.SubstrMid(0,14);
+                            if (FldTemp == "STUB.EARN.RATE")
+                            {
+                                FldTemp   = FldName.SubstrMid(14,2);
+                                EarnIndex = FldTemp.AsWord();
+    
+                                if ((EarnIndex >= 1) &&
+                                    (EarnIndex <= PAYLP_MAX_DED_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Earn[EarnIndex-1].Rate;
+                                }
+                            }
+
+                            FldTemp = FldName.SubstrMid(0,13);
+                            if (FldTemp == "STUB.EARN.AMT")
+                            {
+                                FldTemp   = FldName.SubstrMid(13,2);
+                                EarnIndex = FldTemp.AsWord();
+
+                                if ((EarnIndex >= 1) &&
+                                    (EarnIndex <= PAYLP_MAX_DED_LINES))
+                                {
+                                    FldValue = m_Chk.Stub.Earn[EarnIndex-1].Amt;
+                                }
+                            }
+
+                            goto FldValueDone;
+                        }
+
+                        //------ Other stub fields
+                        if (FldName == "STUB.EMPNUM")
+                            FldValue  = m_Chk.Stub.EmpNum;
+
+                        else if (FldName == "STUB.EMPNAME")
+                            FldValue  = m_Chk.Stub.EmpName;
+
+                        else if (FldName == "STUB.SOCSECNUM")
+                            FldValue  = m_Chk.Stub.SocSecNum;
+
+                        else if (FldName == "STUB.PERIODEND")
+                            FldValue  = m_Chk.Stub.PeriodEnd;
+
+                        else if (FldName == "STUB.DATEISSUED")
+                            FldValue  = m_Chk.Stub.DateIssued;
+
+                        else if (FldName == "STUB.CHECKNUM")
+                            FldValue  = m_Chk.Stub.ChkNum;
+
+                        else if (FldName == "STUB.FEDTAX")
+                            FldValue  = m_Chk.Stub.FedTax;
+
+                        else if (FldName == "STUB.FEDTAXYTD")
+                            FldValue  = m_Chk.Stub.FedTaxYTD;
+
+                        else if (FldName == "STUB.STATETAX")
+                            FldValue  = m_Chk.Stub.StateTax;
+
+                        else if (FldName == "STUB.STATETAXYTD")
+                            FldValue  = m_Chk.Stub.StateTaxYTD;
+
+                        else if (FldName == "STUB.FICA")
+                            FldValue  = m_Chk.Stub.Fica;
+
+                        else if (FldName == "STUB.FICAYTD")
+                            FldValue  = m_Chk.Stub.FicaYTD;
+
+                        else if (FldName == "STUB.MEDICARE")
+                            FldValue  = m_Chk.Stub.Medicare;
+
+                        else if (FldName == "STUB.MEDICAREYTD")
+                            FldValue  = m_Chk.Stub.MedicareYTD;
+
+                        else if (FldName == "STUB.VACATIONTIME")
+                            FldValue  = m_Chk.Stub.VacationTime;
+
+                        else if (FldName == "STUB.VACATIONREMAIN")
+                            FldValue  = m_Chk.Stub.VacationRemain;
+
+                        else if (FldName == "STUB.SICKTIME")
+                            FldValue  = m_Chk.Stub.SickTime;
+
+                        else if (FldName == "STUB.SICKREMAIN")
+                            FldValue  = m_Chk.Stub.SickRemain;
+
+                        else if (FldName == "STUB.PERSONALTIME")
+                            FldValue  = m_Chk.Stub.PersonalTime;
+
+                        else if (FldName == "STUB.PERSONALREMAIN")
+                            FldValue  = m_Chk.Stub.PersonalRemain;
+
+                        else if (FldName == "STUB.OTHERTIME")
+                            FldValue  = m_Chk.Stub.OtherTime;
+
+                        else if (FldName == "STUB.OTHERREMAIN")
+                            FldValue  = m_Chk.Stub.OtherRemain;
+
+                        else if (FldName == "STUB.EARNINGS")
+                            FldValue  = m_Chk.Stub.Earnings;
+
+                        else if (FldName == "STUB.EARNINGSYTD")
+                            FldValue  = m_Chk.Stub.EarningsYTD;
+
+                        else if (FldName == "STUB.NETPAY")
+                            FldValue  = m_Chk.Stub.NetPay;
+
+                        else if (FldName == "STUB.NETPAYYTD")
+                            FldValue  = m_Chk.Stub.NetPayYTD;
+
+                        else if (FldName == "STUB.MARITALSTATUS")
+                            FldValue  = m_Chk.Stub.MaritalStatus;
+
+                        else if (FldName == "STUB.ALLOWANCES")
+                            FldValue  = m_Chk.Stub.Allowances;
+
+                        else if (FldName == "STUB.COSTCENTER")
+                            FldValue  = m_Chk.Stub.CostCenter;
+
+                        else if (FldName == "STUB.MSG01")
+                            FldValue  = m_Chk.Stub.Msg1;
+
+                        else if (FldName == "STUB.MSG02")
+                            FldValue  = m_Chk.Stub.Msg2;
+
+                        else if (FldName == "STUB.LOCATION")
+                            FldValue  = m_Chk.Stub.Location;
+
+                        else
+                        {
+                            // fprintf(stderr,"\nField not found =>"); FldName.Display();
+                            FldValue = "Unknown Field: ";
+                            FldValue = FldValue + FldName;
+                        }
+
+                        goto FldValueDone;
+                    }
+                }
+                else if ((m_RptType == RPTTYPE_W2) ||
+                         (m_RptType == RPTTYPE_W2_CRPE))
+                {
+                    /* Control */
+                    FoundFlag = LB_TRUE;
+                    if (FldName == "CONTROL-A")
+                        FldValue  = m_W2[0].Control;
+                    else if (FldName == "CONTROL-B")
+                        FldValue  = m_W2[1].Control;
+                    else if (FldName == "CONTROL-C")
+                        FldValue  = m_W2[2].Control;
+                    else if (FldName == "CONTROL-D")
+                        FldValue  = m_W2[3].Control;
+                    else
+                        FoundFlag = LB_FALSE;
+
+
+                    /* FEDID */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "FEDID-A")
+                            FldValue  = m_W2[0].FedID;
+                        else if (FldName == "FEDID-B")
+                            FldValue  = m_W2[1].FedID;
+                        else if (FldName == "FEDID-C")
+                            FldValue  = m_W2[2].FedID;
+                        else if (FldName == "FEDID-D")
+                            FldValue  = m_W2[3].FedID;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* FEDWAGES */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "FEDWAGES-A")
+                            FldValue  = m_W2[0].FedWages;
+                        else if (FldName == "FEDWAGES-B")
+                            FldValue  = m_W2[1].FedWages;
+                        else if (FldName == "FEDWAGES-C")
+                            FldValue  = m_W2[2].FedWages;
+                        else if (FldName == "FEDWAGES-D")
+                            FldValue  = m_W2[3].FedWages;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* FEDTAX */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "FEDTAX-A")
+                            FldValue  = m_W2[0].FedTax;
+                        else if (FldName == "FEDTAX-B")
+                            FldValue  = m_W2[1].FedTax;
+                        else if (FldName == "FEDTAX-C")
+                            FldValue  = m_W2[2].FedTax;
+                        else if (FldName == "FEDTAX-D")
+                            FldValue  = m_W2[3].FedTax;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* FICAWAGES */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "FICAWAGES-A")
+                            FldValue  = m_W2[0].FicaWages;
+                        else if (FldName == "FICAWAGES-B")
+                            FldValue  = m_W2[1].FicaWages;
+                        else if (FldName == "FICAWAGES-C")
+                            FldValue  = m_W2[2].FicaWages;
+                        else if (FldName == "FICAWAGES-D")
+                            FldValue  = m_W2[3].FicaWages;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* FICATAX */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "FICATAX-A")
+                            FldValue  = m_W2[0].FicaTax;
+                        else if (FldName == "FICATAX-B")
+                            FldValue  = m_W2[1].FicaTax;
+                        else if (FldName == "FICATAX-C")
+                            FldValue  = m_W2[2].FicaTax;
+                        else if (FldName == "FICATAX-D")
+                            FldValue  = m_W2[3].FicaTax;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* ORGNAME */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "ORGNAME-A")
+                            FldValue  = m_W2[0].OrgName;
+                        else if (FldName == "ORGNAME-B")
+                            FldValue  = m_W2[1].OrgName;
+                        else if (FldName == "ORGNAME-C")
+                            FldValue  = m_W2[2].OrgName;
+                        else if (FldName == "ORGNAME-D")
+                            FldValue  = m_W2[3].OrgName;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+
+                    /* ORGADDR1 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "ORGADDR-A01")
+                        FldValue  = m_W2[0].OrgAddr[0];
+                        else if (FldName == "ORGADDR-B01")
+                            FldValue  = m_W2[1].OrgAddr[0];
+                        else if (FldName == "ORGADDR-C01")
+                            FldValue  = m_W2[2].OrgAddr[0];
+                        else if (FldName == "ORGADDR-D01")
+                            FldValue  = m_W2[3].OrgAddr[0];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+
+                    /* ORGADDR2 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "ORGADDR-A02")
+                            FldValue  = m_W2[0].OrgAddr[1];
+                        else if (FldName == "ORGADDR-B02")
+                            FldValue  = m_W2[1].OrgAddr[1];
+                        else if (FldName == "ORGADDR-C02")
+                            FldValue  = m_W2[2].OrgAddr[1];
+                        else if (FldName == "ORGADDR-D02")
+                            FldValue  = m_W2[3].OrgAddr[1];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* ORGCITYSTATE */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "ORGCITYSTATE-A")
+                            FldValue  = m_W2[0].OrgCityState;
+                        else if (FldName == "ORGCITYSTATE-B")
+                            FldValue  = m_W2[1].OrgCityState;
+                        else if (FldName == "ORGCITYSTATE-C")
+                            FldValue  = m_W2[2].OrgCityState;
+                        else if (FldName == "ORGCITYSTATE-D")
+                            FldValue  = m_W2[3].OrgCityState;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+                    
+                    /* ORGZIPCODE */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "ORGZIPCODE-A")
+                            FldValue  = m_W2[0].OrgZipCode;
+                        else if (FldName == "ORGZIPCODE-B")
+                            FldValue  = m_W2[1].OrgZipCode;
+                        else if (FldName == "ORGZIPCODE-C")
+                            FldValue  = m_W2[2].OrgZipCode;
+                        else if (FldName == "ORGZIPCODE-D")
+                            FldValue  = m_W2[3].OrgZipCode;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* MEDWAGES */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "MEDWAGES-A")
+                            FldValue  = m_W2[0].MedWages;
+                        else if (FldName == "MEDWAGES-B")
+                            FldValue  = m_W2[1].MedWages;
+                        else if (FldName == "MEDWAGES-C")
+                            FldValue  = m_W2[2].MedWages;
+                        else if (FldName == "MEDWAGES-D")
+                            FldValue  = m_W2[3].MedWages;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* MEDTAX */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "MEDTAX-A")
+                        FldValue  = m_W2[0].MedTax;
+                        else if (FldName == "MEDTAX-B")
+                            FldValue  = m_W2[1].MedTax;
+                        else if (FldName == "MEDTAX-C")
+                            FldValue  = m_W2[2].MedTax;
+                        else if (FldName == "MEDTAX-D")
+                            FldValue  = m_W2[3].MedTax;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* SOCSECNUM */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "SOCSECNUM-A")
+                            FldValue  = m_W2[0].SocSecNum;
+                        else if (FldName == "SOCSECNUM-B")
+                            FldValue  = m_W2[1].SocSecNum;
+                        else if (FldName == "SOCSECNUM-C")
+                            FldValue  = m_W2[2].SocSecNum;
+                        else if (FldName == "SOCSECNUM-D")
+                            FldValue  = m_W2[3].SocSecNum;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EIC */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EIC-A")
+                            FldValue  = m_W2[0].EIC;
+                        else if (FldName == "EIC-B")
+                            FldValue  = m_W2[1].EIC;
+                        else if (FldName == "EIC-C")
+                            FldValue  = m_W2[2].EIC;
+                        else if (FldName == "EIC-D")
+                            FldValue  = m_W2[3].EIC;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* FRINGE */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "FRINGE-A")
+                            FldValue  = m_W2[0].Fringe;
+                        else if (FldName == "FRINGE-B")
+                            FldValue  = m_W2[1].Fringe;
+                        else if (FldName == "FRINGE-C")
+                            FldValue  = m_W2[2].Fringe;
+                        else if (FldName == "FRINGE-D")
+                            FldValue  = m_W2[3].Fringe;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* DEPCARE */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "DEPCARE-A")
+                            FldValue  = m_W2[0].DepCare;
+                        else if (FldName == "DEPCARE-B")
+                            FldValue  = m_W2[1].DepCare;
+                        else if (FldName == "DEPCARE-C")
+                            FldValue  = m_W2[2].DepCare;
+                        else if (FldName == "DEPCARE-D")
+                            FldValue  = m_W2[3].DepCare;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EMPNAME */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EMPNAME-A")
+                            FldValue  = m_W2[0].EmpName;
+                        else if (FldName == "EMPNAME-B")
+                            FldValue  = m_W2[1].EmpName;
+                        else if (FldName == "EMPNAME-C")
+                            FldValue  = m_W2[2].EmpName;
+                        else if (FldName == "EMPNAME-D")
+                            FldValue  = m_W2[3].EmpName;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EMPADDR1 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EMPADDR-A01")
+                            FldValue  = m_W2[0].EmpAddr[0];
+                        else if (FldName == "EMPADDR-B01")
+                            FldValue  = m_W2[1].EmpAddr[0];
+                        else if (FldName == "EMPADDR-C01")
+                            FldValue  = m_W2[2].EmpAddr[0];
+                        else if (FldName == "EMPADDR-D01")
+                            FldValue  = m_W2[3].EmpAddr[0];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EMPADDR2 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EMPADDR-A02")
+                            FldValue  = m_W2[0].EmpAddr[1];
+                        else if (FldName == "EMPADDR-B02")
+                            FldValue  = m_W2[1].EmpAddr[1];
+                        else if (FldName == "EMPADDR-C02")
+                            FldValue  = m_W2[2].EmpAddr[1];
+                        else if (FldName == "EMPADDR-D02")
+                            FldValue  = m_W2[3].EmpAddr[1];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EMPADDR3 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EMPADDR-A03")
+                            FldValue  = m_W2[0].EmpAddr[2];
+                        else if (FldName == "EMPADDR-B03")
+                            FldValue  = m_W2[1].EmpAddr[2];
+                        else if (FldName == "EMPADDR-C03")
+                            FldValue  = m_W2[2].EmpAddr[2];
+                        else if (FldName == "EMPADDR-D03")
+                            FldValue  = m_W2[3].EmpAddr[2];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EMPZIPCODE */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EMPZIPCODE-A")
+                            FldValue  = m_W2[0].EmpZipCode;
+                        else if (FldName == "EMPZIPCODE-B")
+                            FldValue  = m_W2[1].EmpZipCode;
+                        else if (FldName == "EMPZIPCODE-C")
+                            FldValue  = m_W2[2].EmpZipCode;
+                        else if (FldName == "EMPZIPCODE-D")
+                            FldValue  = m_W2[3].EmpZipCode;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12CODE1 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12CODE-A01")
+                            FldValue  = m_W2[0].Box12Code[0];
+                        else if (FldName == "BOX12CODE-B01")
+                            FldValue  = m_W2[1].Box12Code[0];
+                        else if (FldName == "BOX12CODE-C01")
+                            FldValue  = m_W2[2].Box12Code[0];
+                        else if (FldName == "BOX12CODE-D01")
+                            FldValue  = m_W2[3].Box12Code[0];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12CODE2 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12CODE-A02")
+                            FldValue  = m_W2[0].Box12Code[1];
+                        else if (FldName == "BOX12CODE-B02")
+                            FldValue  = m_W2[1].Box12Code[1];
+                        else if (FldName == "BOX12CODE-C02")
+                            FldValue  = m_W2[2].Box12Code[1];
+                        else if (FldName == "BOX12CODE-D02")
+                            FldValue  = m_W2[3].Box12Code[1];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12Code3 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12CODE-A03")
+                            FldValue  = m_W2[0].Box12Code[2];
+                        else if (FldName == "BOX12CODE-B03")
+                            FldValue  = m_W2[1].Box12Code[2];
+                        else if (FldName == "BOX12CODE-C03")
+                            FldValue  = m_W2[2].Box12Code[2];
+                        else if (FldName == "BOX12CODE-D03")
+                            FldValue  = m_W2[3].Box12Code[2];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12Code4 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12CODE-A04")
+                            FldValue  = m_W2[0].Box12Code[3];
+                        else if (FldName == "BOX12CODE-B04")
+                            FldValue  = m_W2[1].Box12Code[3];
+                        else if (FldName == "BOX12CODE-C04")
+                            FldValue  = m_W2[2].Box12Code[3];
+                        else if (FldName == "BOX12CODE-D04")
+                            FldValue  = m_W2[3].Box12Code[3];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12AMT1 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12AMT-A01")
+                            FldValue  = m_W2[0].Box12Amt[0];
+                        else if (FldName == "BOX12AMT-B01")
+                            FldValue  = m_W2[1].Box12Amt[0];
+                        else if (FldName == "BOX12AMT-C01")
+                            FldValue  = m_W2[2].Box12Amt[0];
+                        else if (FldName == "BOX12AMT-D01")
+                            FldValue  = m_W2[3].Box12Amt[0];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12AMT2 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12AMT-A02")
+                            FldValue  = m_W2[0].Box12Amt[1];
+                        else if (FldName == "BOX12AMT-B02")
+                            FldValue  = m_W2[1].Box12Amt[1];
+                        else if (FldName == "BOX12AMT-C02")
+                            FldValue  = m_W2[2].Box12Amt[1];
+                        else if (FldName == "BOX12AMT-D02")
+                            FldValue  = m_W2[3].Box12Amt[1];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12AMT3 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12AMT-A03")
+                            FldValue  = m_W2[0].Box12Amt[2];
+                        else if (FldName == "BOX12AMT-B03")
+                            FldValue  = m_W2[1].Box12Amt[2];
+                        else if (FldName == "BOX12AMT-C03")
+                            FldValue  = m_W2[2].Box12Amt[2];
+                        else if (FldName == "BOX12AMT-D03")
+                            FldValue  = m_W2[3].Box12Amt[2];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* Box12AMT4 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX12AMT-A04")
+                            FldValue  = m_W2[0].Box12Amt[3];
+                        else if (FldName == "BOX12AMT-B04")
+                            FldValue  = m_W2[1].Box12Amt[3];
+                        else if (FldName == "BOX12AMT-C04")
+                            FldValue  = m_W2[2].Box12Amt[3];
+                        else if (FldName == "BOX12AMT-D04")
+                            FldValue  = m_W2[3].Box12Amt[3];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14CODE1 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14CODE-A01")
+                            FldValue  = m_W2[0].Box14Code[0];
+                        else if (FldName == "BOX14CODE-B01")
+                            FldValue  = m_W2[1].Box14Code[0];
+                        else if (FldName == "BOX14CODE-C01")
+                            FldValue  = m_W2[2].Box14Code[0];
+                        else if (FldName == "BOX14CODE-D01")
+                            FldValue  = m_W2[3].Box14Code[0];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14CODE2 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14CODE-A02")
+                            FldValue  = m_W2[0].Box14Code[1];
+                        else if (FldName == "BOX14CODE-B02")
+                            FldValue  = m_W2[1].Box14Code[1];
+                        else if (FldName == "BOX14CODE-C02")
+                            FldValue  = m_W2[2].Box14Code[1];
+                        else if (FldName == "BOX14CODE-D02")
+                            FldValue  = m_W2[3].Box14Code[1];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14CODE3 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14CODE-A03")
+                            FldValue  = m_W2[0].Box14Code[2];
+                        else if (FldName == "BOX14CODE-B03")
+                            FldValue  = m_W2[1].Box14Code[2];
+                        else if (FldName == "BOX14CODE-C03")
+                            FldValue  = m_W2[2].Box14Code[2];
+                        else if (FldName == "BOX14CODE-D03")
+                            FldValue  = m_W2[3].Box14Code[2];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14CODE4 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14CODE-A04")
+                            FldValue  = m_W2[0].Box14Code[3];
+                        else if (FldName == "BOX14CODE-B04")
+                            FldValue  = m_W2[1].Box14Code[3];
+                        else if (FldName == "BOX14CODE-C04")
+                            FldValue  = m_W2[2].Box14Code[3];
+                        else if (FldName == "BOX14CODE-D04")
+                            FldValue  = m_W2[3].Box14Code[3];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+
+                    /* BOX14AMT1 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14AMT-A01")
+                            FldValue  = m_W2[0].Box14Amt[0];
+                        else if (FldName == "BOX14AMT-B01")
+                            FldValue  = m_W2[1].Box14Amt[0];
+                        else if (FldName == "BOX14AMT-C01")
+                            FldValue  = m_W2[2].Box14Amt[0];
+                        else if (FldName == "BOX14AMT-D01")
+                            FldValue  = m_W2[3].Box14Amt[0];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14AMT2 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14AMT-A02")
+                            FldValue  = m_W2[0].Box14Amt[1];
+                        else if (FldName == "BOX14AMT-B02")
+                            FldValue  = m_W2[1].Box14Amt[1];
+                        else if (FldName == "BOX14AMT-C02")
+                            FldValue  = m_W2[2].Box14Amt[1];
+                        else if (FldName == "BOX14AMT-D02")
+                            FldValue  = m_W2[3].Box14Amt[1];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14AMT3 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14AMT-A03")
+                            FldValue  = m_W2[0].Box14Amt[2];
+                        else if (FldName == "BOX14AMT-B03")
+                            FldValue  = m_W2[1].Box14Amt[2];
+                        else if (FldName == "BOX14AMT-C03")
+                            FldValue  = m_W2[2].Box14Amt[2];
+                        else if (FldName == "BOX14AMT-D03")
+                            FldValue  = m_W2[3].Box14Amt[2];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* BOX14AMT4 */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "BOX14AMT-A04")
+                            FldValue  = m_W2[0].Box14Amt[3];
+                        else if (FldName == "BOX14AMT-B04")
+                            FldValue  = m_W2[1].Box14Amt[3];
+                        else if (FldName == "BOX14AMT-C04")
+                            FldValue  = m_W2[2].Box14Amt[3];
+                        else if (FldName == "BOX14AMT-D04")
+                            FldValue  = m_W2[3].Box14Amt[3];
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* PENSIONFLAG */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "PENSIONFLAG-A")
+                            FldValue  = m_W2[0].PensionFlag;
+                        else if (FldName == "PENSIONFLAG-B")
+                            FldValue  = m_W2[1].PensionFlag;
+                        else if (FldName == "PENSIONFLAG-C")
+                            FldValue  = m_W2[2].PensionFlag;
+                        else if (FldName == "PENSIONFLAG-D")
+                            FldValue  = m_W2[3].PensionFlag;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* SUBTOTALFLAG */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "SUBTOTALFLAG-A")
+                            FldValue  = m_W2[0].SubTotalFlag;
+                        else if (FldName == "SUBTOTALFLAG-B")
+                            FldValue  = m_W2[1].SubTotalFlag;
+                        else if (FldName == "SUBTOTALFLAG-C")
+                            FldValue  = m_W2[2].SubTotalFlag;
+                        else if (FldName == "SUBTOTALFLAG-D")
+                            FldValue  = m_W2[3].SubTotalFlag;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* DEFCOMPFLAG */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "DEFCOMPFLAG-A")
+                            FldValue  = m_W2[0].DefCompFlag;
+                        else if (FldName == "DEFCOMPFLAG-B")
+                            FldValue  = m_W2[1].DefCompFlag;
+                        else if (FldName == "DEFCOMPFLAG-C")
+                            FldValue  = m_W2[2].DefCompFlag;
+                        else if (FldName == "DEFCOMPFLAG-D")
+                            FldValue  = m_W2[3].DefCompFlag;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* STATENAME */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "STATENAME-A")
+                            FldValue  = m_W2[0].StateName;
+                        else if (FldName == "STATENAME-B")
+                            FldValue  = m_W2[1].StateName;
+                        else if (FldName == "STATENAME-C")
+                            FldValue  = m_W2[2].StateName;
+                        else if (FldName == "STATENAME-D")
+                            FldValue  = m_W2[3].StateName;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* STATEID */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "STATEID-A")
+                            FldValue  = m_W2[0].StateID;
+                        else if (FldName == "STATEID-B")
+                            FldValue  = m_W2[1].StateID;
+                        else if (FldName == "STATEID-C")
+                            FldValue  = m_W2[2].StateID;
+                        else if (FldName == "STATEID-D")
+                            FldValue  = m_W2[3].StateID;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* STATEWAGES */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "STATEWAGES-A")
+                            FldValue  = m_W2[0].StateWages;
+                        else if (FldName == "STATEWAGES-B")
+                            FldValue  = m_W2[1].StateWages;
+                        else if (FldName == "STATEWAGES-C")
+                            FldValue  = m_W2[2].StateWages;
+                        else if (FldName == "STATEWAGES-D")
+                            FldValue  = m_W2[3].StateWages;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* STATETAX */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "STATETAX-A")
+                            FldValue  = m_W2[0].StateTax;
+                        else if (FldName == "STATETAX-B")
+                            FldValue  = m_W2[1].StateTax;
+                        else if (FldName == "STATETAX-C")
+                            FldValue  = m_W2[2].StateTax;
+                        else if (FldName == "STATETAX-D")
+                            FldValue  = m_W2[3].StateTax;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+                    /* EMPFNAME */
+                    if (FoundFlag == FALSE)
+                    {
+                        FoundFlag = LB_TRUE;
+                        if (FldName == "EMPFNAME-A")
+                            FldValue  = m_W2[0].EmpFName;
+                        else if (FldName == "EMPFNAME-B")
+                            FldValue  = m_W2[1].EmpFName;
+                        else if (FldName == "EMPFNAME-C")
+                            FldValue  = m_W2[2].EmpFName;
+                        else if (FldName == "EMPFNAME-D")
+                            FldValue  = m_W2[3].EmpFName;
+                        else
+                            FoundFlag = LB_FALSE;
+                    }
+
+
+                    if (FoundFlag == FALSE)
+                    {
+                        // fprintf(stderr,"\nField not found =>"); FldName.Display();
+                        FldValue = "Unknown Field: ";
+                        FldValue = FldValue + FldName;
+                    }
+                }
+                else if ((m_RptType == RPTTYPE_1099) ||
+                         (m_RptType == RPTTYPE_1099_CRPE))
+                {
+                    if (FldName == "PAYERFEDID-A")
+                        FldValue  = m_1099[0].PayerFedID;
+
+                    else if (FldName == "PAYERFEDID-B")
+                        FldValue  = m_1099[1].PayerFedID;
+
+                    else if (FldName == "PAYERFEDID-C")
+                        FldValue  = m_1099[2].PayerFedID;
+
+                    else if (FldName == "PAYERSTATEID-A")
+                        FldValue  = m_1099[0].PayerStateID;
+
+                    else if (FldName == "PAYERSTATEID-B")
+                        FldValue  = m_1099[1].PayerStateID;
+
+                    else if (FldName == "PAYERSTATEID-C")
+                        FldValue  = m_1099[2].PayerStateID;
+
+                    else if (FldName == "PAYERNAME-A")
+                        FldValue  = m_1099[0].PayerName;
+
+                    else if (FldName == "PAYERNAME-B")
+                        FldValue  = m_1099[1].PayerName;
+
+                    else if (FldName == "PAYERNAME-C")
+                        FldValue  = m_1099[2].PayerName;
+
+                    else if (FldName == "PAYERADDR-A01")
+                        FldValue  = m_1099[0].PayerAddr[0];
+
+                    else if (FldName == "PAYERADDR-A02")
+                        FldValue  = m_1099[0].PayerAddr[1];
+
+                    else if (FldName == "PAYERADDR-A03")
+                        FldValue  = m_1099[0].PayerAddr[2];
+
+                    else if (FldName == "PAYERADDR-B01")
+                        FldValue  = m_1099[1].PayerAddr[0];
+
+                    else if (FldName == "PAYERADDR-B02")
+                        FldValue  = m_1099[1].PayerAddr[1];
+
+                    else if (FldName == "PAYERADDR-B03")
+                        FldValue  = m_1099[1].PayerAddr[2];
+
+                    else if (FldName == "PAYERADDR-C01")
+                        FldValue  = m_1099[2].PayerAddr[0];
+
+                    else if (FldName == "PAYERADDR-C02")
+                        FldValue  = m_1099[2].PayerAddr[1];
+
+                    else if (FldName == "PAYERADDR-C03")
+                        FldValue  = m_1099[2].PayerAddr[2];
+
+                    else if (FldName == "RECIPFEDID-A")
+                        FldValue  = m_1099[0].RecipFedID;
+
+                    else if (FldName == "RECIPFEDID-B")
+                        FldValue  = m_1099[1].RecipFedID;
+
+                    else if (FldName == "RECIPFEDID-C")
+                        FldValue  = m_1099[2].RecipFedID;
+
+                    else if (FldName == "RECIPNAME-A")
+                        FldValue  = m_1099[0].RecipName;
+
+                    else if (FldName == "RECIPNAME-B")
+                        FldValue  = m_1099[1].RecipName;
+
+                    else if (FldName == "RECIPNAME-C")
+                        FldValue  = m_1099[2].RecipName;
+
+                    else if (FldName == "RECIPADDR-A01")
+                        FldValue  = m_1099[0].RecipAddr[0];
+
+                    else if (FldName == "RECIPADDR-A02")
+                        FldValue  = m_1099[0].RecipAddr[1];
+
+                    else if (FldName == "RECIPADDR-A03")
+                        FldValue  = m_1099[0].RecipAddr[2];
+
+                    else if (FldName == "RECIPADDR-B01")
+                        FldValue  = m_1099[1].RecipAddr[0];
+
+                    else if (FldName == "RECIPADDR-B02")
+                        FldValue  = m_1099[1].RecipAddr[1];
+
+                    else if (FldName == "RECIPADDR-B03")
+                        FldValue  = m_1099[1].RecipAddr[2];
+
+                    else if (FldName == "RECIPADDR-C01")
+                        FldValue  = m_1099[2].RecipAddr[0];
+
+                    else if (FldName == "RECIPADDR-C02")
+                        FldValue  = m_1099[2].RecipAddr[1];
+
+                    else if (FldName == "RECIPADDR-C03")
+                        FldValue  = m_1099[2].RecipAddr[2];
+
+                    else if (FldName == "FEDTAX-A")
+                        FldValue  = m_1099[0].FedTax;
+
+                    else if (FldName == "FEDTAX-B")
+                        FldValue  = m_1099[1].FedTax;
+
+                    else if (FldName == "FEDTAX-C")
+                        FldValue  = m_1099[2].FedTax;
+
+                    else if (FldName == "NONEMPCOMP-A")
+                        FldValue  = m_1099[0].NonEmpComp;
+
+                    else if (FldName == "NONEMPCOMP-B")
+                        FldValue  = m_1099[1].NonEmpComp;
+
+                    else if (FldName == "NONEMPCOMP-C")
+                        FldValue  = m_1099[2].NonEmpComp;
+
+                    else if (FldName == "RENTS-A")
+                        FldValue  = m_1099[0].Rents;
+
+                    else if (FldName == "RENTS-B")
+                        FldValue  = m_1099[1].Rents;
+
+                    else if (FldName == "RENTS-C")
+                        FldValue  = m_1099[2].Rents;
+
+                    else
+                    {
+                        // fprintf(stderr,"\nField not found =>"); FldName.Display();
+                        FldValue = "Unknown Field: ";
+                        FldValue = FldValue + FldName;
+                    }
+                }
+
+                FldValueDone:
+                    //--- Move Field Value to build line
+                    BldLine.Append(FldValue);
+
+                    //--- Skip past end of field symbol ">"
+                    CktLineIndex++;
+            }
+        }
+    }
+
+    m_Template.LineCur++;
+
+    //printf("\nBuild  line:"); BldLine.DiagDisplay();
+    //printf("\nTPlate line:"); m_Template.Lines[m_Template.LineCur-1].DiagDisplay();
+    //getchar();
+
+    pa_Line = BldLine;
+
+    return (PAYLP_STAT_OK);
+}
+
+
+LB_Bool_T GemPayLP_T::CrpeGenerateDataFile(LB_String_T& pa_OutputPath)
+{
+    LB_String_T OutFileName;
+    LB_String_T InpFileName;
+    LB_String_T OutputPath;
+    LB_String_T DisplayInfo;
+    LB_Bool_T   ReturnFlag;
+
+    ReturnFlag = LB_TRUE;
+
+    //--- Check output file path
+    if (pa_OutputPath.Size() == 0)
+        return (LB_FALSE);
+
+    //--- Fix up path
+    OutputPath = pa_OutputPath;
+    if (OutputPath[OutputPath.Size() - 1] != '\\')
+        OutputPath = OutputPath + "\\";
+
+    //--- Clear contents of existing table definitions
+    m_ChkTable.Clear();
+    m_ErnTable.Clear();
+    m_DedTable.Clear();
+
+    //--- Define check table
+    m_ChkTable.ColumnDefine("S_CHECKNUM",  7, XB_COLFLG_STRING | XB_COLFLG_INDEX);
+    m_ChkTable.ColumnDefine("S_EMPNUM",    7, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_EMPNAME",  30, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_SOCNUM",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_PEREND",    8, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_DATEISSD",  8, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_FED",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_FEDYTD",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_STATE",    11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_STATEYTD", 11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_FICA",     11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_FICAYTD",  11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_MED",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_MEDYTD",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_VAC",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_VACREM",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_SCK",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_SCKREM",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_PER",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_PERREM",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_OTH",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_OTHREM",   11, XB_COLFLG_STRING);
+
+    m_ChkTable.ColumnDefine("S_EARN",     11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_EARNYTD",  11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_NET",      11, XB_COLFLG_STRING);    m_ChkTable.ColumnDefine("S_NETYTD",   11, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_MARITST",   1, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_ALLOW",     2, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_COSTCNTR",  5, XB_COLFLG_STRING);
+
+    m_ChkTable.ColumnDefine("B_DATE",      8, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_CHECKNUM",  6, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_AMT",      14, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_SPELAMT1", 55, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_SPELAMT2", 55, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_PAYTO",    30, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_ADDR1",    30, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_ADDR2",    30, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_ADDR3",    30, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_ADDR4",    30, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("B_ADDR5",    30, XB_COLFLG_STRING);
+
+    m_ChkTable.ColumnDefine("S_MSG01",    40, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_MSG02",    40, XB_COLFLG_STRING);
+    m_ChkTable.ColumnDefine("S_LOCATION",  5, XB_COLFLG_STRING);
+
+    //--- Define Earnings Table
+    m_ErnTable.ColumnDefine("S_CHECKNUM",  7, XB_COLFLG_STRING | XB_COLFLG_INDEX);
+    m_ErnTable.ColumnDefine("S_ERNCD01",  10, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNCD02",  10, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNCD03",  10, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNCD04",  10, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNCD05",  10, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNCD06",  10, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNCD07",  10, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNCD08",  10, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNCD09",  10, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNCD10",  10, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNCD11",  10, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNCD12",  10, XB_COLFLG_STRING);
+
+    m_ErnTable.ColumnDefine("S_ERNHR01",   8, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNHR02",   8, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNHR03",   8, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNHR04",   8, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNHR05",   8, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNHR06",   8, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNHR07",   8, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNHR08",   8, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNHR09",   8, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNHR10",   8, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNHR11",   8, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNHR12",   8, XB_COLFLG_STRING);
+
+    m_ErnTable.ColumnDefine("S_ERNRT01",  11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNRT02",  11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNRT03",  11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNRT04",  11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNRT05",  11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNRT06",  11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNRT07",  11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNRT08",  11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNRT09",  11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNRT10",  11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNRT11",  11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNRT12",  11, XB_COLFLG_STRING);
+
+    m_ErnTable.ColumnDefine("S_ERNAMT01", 11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNAMT02", 11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNAMT03", 11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNAMT04", 11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNAMT05", 11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNAMT06", 11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNAMT07", 11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNAMT08", 11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNAMT09", 11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNAMT10", 11, XB_COLFLG_STRING);
+    m_ErnTable.ColumnDefine("S_ERNAMT11", 11, XB_COLFLG_STRING);    m_ErnTable.ColumnDefine("S_ERNAMT12", 11, XB_COLFLG_STRING);
+
+    //--- Define Deductions Table
+    m_DedTable.ColumnDefine("S_CHECKNUM",  7, XB_COLFLG_STRING | XB_COLFLG_INDEX);
+    m_DedTable.ColumnDefine("S_DEDCD01",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD02",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD03",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD04",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD05",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD06",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD07",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD08",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD09",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD10",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD11",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD12",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD13",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD14",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD15",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD16",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD17",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD18",   3, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDCD19",   3, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDCD20",   3, XB_COLFLG_STRING);
+
+    m_DedTable.ColumnDefine("S_DEDAMT01", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT02", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT03", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT04", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT05", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT06", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT07", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT08", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT09", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT10", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT11", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT12", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT13", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT14", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT15", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT16", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT17", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT18", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDAMT19", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDAMT20", 11, XB_COLFLG_STRING);
+
+    m_DedTable.ColumnDefine("S_DEDYTD01", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD02", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD03", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD04", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD05", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD06", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD07", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD08", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD09", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD10", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD11", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD12", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD13", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD14", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD15", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD16", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD17", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD18", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDYTD19", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDYTD20", 11, XB_COLFLG_STRING);
+
+    m_DedTable.ColumnDefine("S_DEDBAL01", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL02", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL03", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL04", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL05", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL06", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL07", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL08", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL09", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL10", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL11", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL12", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL13", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL14", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL15", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL16", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL17", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL18", 11, XB_COLFLG_STRING);
+    m_DedTable.ColumnDefine("S_DEDBAL19", 11, XB_COLFLG_STRING);    m_DedTable.ColumnDefine("S_DEDBAL20", 11, XB_COLFLG_STRING);
+
+      //--- Create and Open the Checks Table
+    OutFileName = OutputPath;
+    OutFileName = OutFileName + "paychk";
+    m_ChkTable.SetTableName(OutFileName);
+    if (m_ChkTable.Create() == LB_FALSE)
+    {
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+    if (m_ChkTable.Open() == LB_FALSE)
+    {
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+
+    //--- Create and Open the Earnings Table
+    OutFileName = OutputPath;
+    OutFileName = OutFileName + "payern";
+    m_ErnTable.SetTableName(OutFileName);
+    if (m_ErnTable.Create() == LB_FALSE)
+    {
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+    if (m_ErnTable.Open() == LB_FALSE)
+    {
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+
+    //--- Create and Open the Deductions Table
+    OutFileName = OutputPath;
+    OutFileName = OutFileName + "payded";
+    m_DedTable.SetTableName(OutFileName);
+    if (m_DedTable.Create() == LB_FALSE)
+    {
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+    if (m_DedTable.Open() == LB_FALSE)
+    {
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+
+    //--- Set data input filename
+    if ((m_RptType == RPTTYPE_CHK) ||
+        (m_RptType == RPTTYPE_CHK_CRPE))
+    {
+        InpFileName = PAYLP_CHKFILENAME;
+    }
+    else if ((m_RptType == RPTTYPE_NOD) ||
+             (m_RptType == RPTTYPE_NOD_CRPE))
+    {
+        InpFileName = PAYLP_NODFILENAME;
+    }
+
+    //--- Open the check data file
+    m_InpFile.SetFileName(InpFileName);
+    if (m_InpFile.Open(FIO_OM_RO_BUF) == LB_FALSE)
+    {
+        Trace0("CrpeGen: Failed to open check input file");
+        ReturnFlag = LB_FALSE;
+        goto Cleanup;
+    }
+
+    //--- Add entries to check database
+    while (PrtGenLoadNextItem(DisplayInfo) == PAYLP_STAT_OK)
+    {
+        //--- Set check table values
+        m_ChkTable.SetColumnValue(  0, m_Chk.Stub.ChkNum);
+        m_ChkTable.SetColumnValue(  1, m_Chk.Stub.EmpNum);
+        m_ChkTable.SetColumnValue(  2, m_Chk.Stub.EmpName);
+        m_ChkTable.SetColumnValue(  3, m_Chk.Stub.SocSecNum);
+        m_ChkTable.SetColumnValue(  4, m_Chk.Stub.PeriodEnd);
+        m_ChkTable.SetColumnValue(  5, m_Chk.Stub.DateIssued);
+
+        m_ChkTable.SetColumnValue(  6, m_Chk.Stub.FedTax);           m_ChkTable.SetColumnValue(  7, m_Chk.Stub.FedTaxYTD);
+        m_ChkTable.SetColumnValue(  8, m_Chk.Stub.StateTax);         m_ChkTable.SetColumnValue(  9, m_Chk.Stub.StateTaxYTD);
+        m_ChkTable.SetColumnValue( 10, m_Chk.Stub.Fica);             m_ChkTable.SetColumnValue( 11, m_Chk.Stub.FicaYTD);
+        m_ChkTable.SetColumnValue( 12, m_Chk.Stub.Medicare);         m_ChkTable.SetColumnValue( 13, m_Chk.Stub.MedicareYTD);
+        m_ChkTable.SetColumnValue( 14, m_Chk.Stub.VacationTime);     m_ChkTable.SetColumnValue( 15, m_Chk.Stub.VacationRemain);
+        m_ChkTable.SetColumnValue( 16, m_Chk.Stub.SickTime);         m_ChkTable.SetColumnValue( 17, m_Chk.Stub.SickRemain);
+        m_ChkTable.SetColumnValue( 18, m_Chk.Stub.PersonalTime);     m_ChkTable.SetColumnValue( 19, m_Chk.Stub.PersonalRemain);
+        m_ChkTable.SetColumnValue( 20, m_Chk.Stub.OtherTime);        m_ChkTable.SetColumnValue( 21, m_Chk.Stub.OtherRemain);
+
+        m_ChkTable.SetColumnValue( 22, m_Chk.Stub.Earnings);         m_ChkTable.SetColumnValue( 23, m_Chk.Stub.EarningsYTD);
+        m_ChkTable.SetColumnValue( 24, m_Chk.Stub.NetPay);           m_ChkTable.SetColumnValue( 25, m_Chk.Stub.NetPayYTD);
+        m_ChkTable.SetColumnValue( 26, m_Chk.Stub.MaritalStatus);
+        m_ChkTable.SetColumnValue( 27, m_Chk.Stub.Allowances);
+        m_ChkTable.SetColumnValue( 28, m_Chk.Stub.CostCenter);
+
+        m_ChkTable.SetColumnValue( 29, m_Chk.Body.Date);
+        m_ChkTable.SetColumnValue( 30, m_Chk.Body.ChkNum);
+        m_ChkTable.SetColumnValue( 31, m_Chk.Body.Amt);
+        m_ChkTable.SetColumnValue( 32, m_Chk.Body.SpellAmt[0]);
+        m_ChkTable.SetColumnValue( 33, m_Chk.Body.SpellAmt[1]);
+        m_ChkTable.SetColumnValue( 34, m_Chk.Body.PayToName);
+        m_ChkTable.SetColumnValue( 35, m_Chk.Body.PayToAddr[0]);
+        m_ChkTable.SetColumnValue( 36, m_Chk.Body.PayToAddr[1]);
+        m_ChkTable.SetColumnValue( 37, m_Chk.Body.PayToAddr[2]);
+        m_ChkTable.SetColumnValue( 38, m_Chk.Body.PayToAddr[3]);
+        m_ChkTable.SetColumnValue( 39, m_Chk.Body.PayToAddr[4]);
+        m_ChkTable.SetColumnValue( 40, m_Chk.Stub.Msg1);
+        m_ChkTable.SetColumnValue( 41, m_Chk.Stub.Msg2);
+        m_ChkTable.SetColumnValue( 42, m_Chk.Stub.Location);
+
+        //--- Set Earnings Table Values
+        m_ErnTable.SetColumnValue(  0, m_Chk.Stub.ChkNum);
+        m_ErnTable.SetColumnValue(  1, m_Chk.Stub.Earn[ 0].Code);       m_ErnTable.SetColumnValue(  2, m_Chk.Stub.Earn[ 1].Code);
+        m_ErnTable.SetColumnValue(  3, m_Chk.Stub.Earn[ 2].Code);       m_ErnTable.SetColumnValue(  4, m_Chk.Stub.Earn[ 3].Code);
+        m_ErnTable.SetColumnValue(  5, m_Chk.Stub.Earn[ 4].Code);       m_ErnTable.SetColumnValue(  6, m_Chk.Stub.Earn[ 5].Code);
+        m_ErnTable.SetColumnValue(  7, m_Chk.Stub.Earn[ 6].Code);       m_ErnTable.SetColumnValue(  8, m_Chk.Stub.Earn[ 7].Code);
+        m_ErnTable.SetColumnValue(  9, m_Chk.Stub.Earn[ 8].Code);       m_ErnTable.SetColumnValue( 10, m_Chk.Stub.Earn[ 9].Code);
+        m_ErnTable.SetColumnValue( 11, m_Chk.Stub.Earn[10].Code);       m_ErnTable.SetColumnValue( 12, m_Chk.Stub.Earn[11].Code);
+
+        m_ErnTable.SetColumnValue( 13, m_Chk.Stub.Earn[ 0].Hours);      m_ErnTable.SetColumnValue( 14, m_Chk.Stub.Earn[ 1].Hours);
+        m_ErnTable.SetColumnValue( 15, m_Chk.Stub.Earn[ 2].Hours);      m_ErnTable.SetColumnValue( 16, m_Chk.Stub.Earn[ 3].Hours);
+        m_ErnTable.SetColumnValue( 17, m_Chk.Stub.Earn[ 4].Hours);      m_ErnTable.SetColumnValue( 18, m_Chk.Stub.Earn[ 5].Hours);
+        m_ErnTable.SetColumnValue( 19, m_Chk.Stub.Earn[ 6].Hours);      m_ErnTable.SetColumnValue( 20, m_Chk.Stub.Earn[ 7].Hours);
+        m_ErnTable.SetColumnValue( 21, m_Chk.Stub.Earn[ 8].Hours);      m_ErnTable.SetColumnValue( 22, m_Chk.Stub.Earn[ 9].Hours);
+        m_ErnTable.SetColumnValue( 23, m_Chk.Stub.Earn[10].Hours);      m_ErnTable.SetColumnValue( 24, m_Chk.Stub.Earn[11].Hours);
+
+        m_ErnTable.SetColumnValue( 25, m_Chk.Stub.Earn[ 0].Rate);       m_ErnTable.SetColumnValue( 26, m_Chk.Stub.Earn[ 1].Rate);
+        m_ErnTable.SetColumnValue( 27, m_Chk.Stub.Earn[ 2].Rate);       m_ErnTable.SetColumnValue( 28, m_Chk.Stub.Earn[ 3].Rate);
+        m_ErnTable.SetColumnValue( 29, m_Chk.Stub.Earn[ 4].Rate);       m_ErnTable.SetColumnValue( 30, m_Chk.Stub.Earn[ 5].Rate);
+        m_ErnTable.SetColumnValue( 31, m_Chk.Stub.Earn[ 6].Rate);       m_ErnTable.SetColumnValue( 32, m_Chk.Stub.Earn[ 7].Rate);
+        m_ErnTable.SetColumnValue( 33, m_Chk.Stub.Earn[ 8].Rate);       m_ErnTable.SetColumnValue( 34, m_Chk.Stub.Earn[ 9].Rate);
+        m_ErnTable.SetColumnValue( 35, m_Chk.Stub.Earn[10].Rate);       m_ErnTable.SetColumnValue( 36, m_Chk.Stub.Earn[11].Rate);
+
+        m_ErnTable.SetColumnValue( 37, m_Chk.Stub.Earn[ 0].Amt);        m_ErnTable.SetColumnValue( 38, m_Chk.Stub.Earn[ 1].Amt);
+        m_ErnTable.SetColumnValue( 39, m_Chk.Stub.Earn[ 2].Amt);        m_ErnTable.SetColumnValue( 40, m_Chk.Stub.Earn[ 3].Amt);
+        m_ErnTable.SetColumnValue( 41, m_Chk.Stub.Earn[ 4].Amt);        m_ErnTable.SetColumnValue( 42, m_Chk.Stub.Earn[ 5].Amt);
+        m_ErnTable.SetColumnValue( 43, m_Chk.Stub.Earn[ 6].Amt);        m_ErnTable.SetColumnValue( 44, m_Chk.Stub.Earn[ 7].Amt);
+        m_ErnTable.SetColumnValue( 45, m_Chk.Stub.Earn[ 8].Amt);        m_ErnTable.SetColumnValue( 46, m_Chk.Stub.Earn[ 9].Amt);
+        m_ErnTable.SetColumnValue( 47, m_Chk.Stub.Earn[10].Amt);        m_ErnTable.SetColumnValue( 48, m_Chk.Stub.Earn[11].Amt);
+
+
+        //--- Set Deductions Table Values
+        m_DedTable.SetColumnValue(  0, m_Chk.Stub.ChkNum);
+        m_DedTable.SetColumnValue(  1, m_Chk.Stub.Deduct[ 0].Code);     m_DedTable.SetColumnValue(  2, m_Chk.Stub.Deduct[ 1].Code);
+        m_DedTable.SetColumnValue(  3, m_Chk.Stub.Deduct[ 2].Code);     m_DedTable.SetColumnValue(  4, m_Chk.Stub.Deduct[ 3].Code);
+        m_DedTable.SetColumnValue(  5, m_Chk.Stub.Deduct[ 4].Code);     m_DedTable.SetColumnValue(  6, m_Chk.Stub.Deduct[ 5].Code);
+        m_DedTable.SetColumnValue(  7, m_Chk.Stub.Deduct[ 6].Code);     m_DedTable.SetColumnValue(  8, m_Chk.Stub.Deduct[ 7].Code);
+        m_DedTable.SetColumnValue(  9, m_Chk.Stub.Deduct[ 8].Code);     m_DedTable.SetColumnValue( 10, m_Chk.Stub.Deduct[ 9].Code);
+        m_DedTable.SetColumnValue( 11, m_Chk.Stub.Deduct[10].Code);     m_DedTable.SetColumnValue( 12, m_Chk.Stub.Deduct[11].Code);
+        m_DedTable.SetColumnValue( 13, m_Chk.Stub.Deduct[12].Code);     m_DedTable.SetColumnValue( 14, m_Chk.Stub.Deduct[13].Code);
+        m_DedTable.SetColumnValue( 15, m_Chk.Stub.Deduct[14].Code);     m_DedTable.SetColumnValue( 16, m_Chk.Stub.Deduct[15].Code);
+        m_DedTable.SetColumnValue( 17, m_Chk.Stub.Deduct[16].Code);     m_DedTable.SetColumnValue( 18, m_Chk.Stub.Deduct[17].Code);
+        m_DedTable.SetColumnValue( 19, m_Chk.Stub.Deduct[18].Code);     m_DedTable.SetColumnValue( 20, m_Chk.Stub.Deduct[19].Code);
+
+        m_DedTable.SetColumnValue( 21, m_Chk.Stub.Deduct[ 0].Amt);      m_DedTable.SetColumnValue( 22, m_Chk.Stub.Deduct[ 1].Amt);
+        m_DedTable.SetColumnValue( 23, m_Chk.Stub.Deduct[ 2].Amt);      m_DedTable.SetColumnValue( 24, m_Chk.Stub.Deduct[ 3].Amt);
+        m_DedTable.SetColumnValue( 25, m_Chk.Stub.Deduct[ 4].Amt);      m_DedTable.SetColumnValue( 26, m_Chk.Stub.Deduct[ 5].Amt);
+        m_DedTable.SetColumnValue( 27, m_Chk.Stub.Deduct[ 6].Amt);      m_DedTable.SetColumnValue( 28, m_Chk.Stub.Deduct[ 7].Amt);
+        m_DedTable.SetColumnValue( 29, m_Chk.Stub.Deduct[ 8].Amt);      m_DedTable.SetColumnValue( 30, m_Chk.Stub.Deduct[ 9].Amt);
+        m_DedTable.SetColumnValue( 31, m_Chk.Stub.Deduct[10].Amt);      m_DedTable.SetColumnValue( 32, m_Chk.Stub.Deduct[11].Amt);
+        m_DedTable.SetColumnValue( 33, m_Chk.Stub.Deduct[12].Amt);      m_DedTable.SetColumnValue( 34, m_Chk.Stub.Deduct[13].Amt);
+        m_DedTable.SetColumnValue( 35, m_Chk.Stub.Deduct[14].Amt);      m_DedTable.SetColumnValue( 36, m_Chk.Stub.Deduct[15].Amt);
+        m_DedTable.SetColumnValue( 37, m_Chk.Stub.Deduct[16].Amt);      m_DedTable.SetColumnValue( 38, m_Chk.Stub.Deduct[17].Amt);
+        m_DedTable.SetColumnValue( 39, m_Chk.Stub.Deduct[18].Amt);      m_DedTable.SetColumnValue( 40, m_Chk.Stub.Deduct[19].Amt);
+
+        m_DedTable.SetColumnValue( 41, m_Chk.Stub.Deduct[ 0].AmtYTD);   m_DedTable.SetColumnValue( 42, m_Chk.Stub.Deduct[ 1].AmtYTD);
+        m_DedTable.SetColumnValue( 43, m_Chk.Stub.Deduct[ 2].AmtYTD);   m_DedTable.SetColumnValue( 44, m_Chk.Stub.Deduct[ 3].AmtYTD);
+        m_DedTable.SetColumnValue( 45, m_Chk.Stub.Deduct[ 4].AmtYTD);   m_DedTable.SetColumnValue( 46, m_Chk.Stub.Deduct[ 5].AmtYTD);
+        m_DedTable.SetColumnValue( 47, m_Chk.Stub.Deduct[ 6].AmtYTD);   m_DedTable.SetColumnValue( 48, m_Chk.Stub.Deduct[ 7].AmtYTD);
+        m_DedTable.SetColumnValue( 49, m_Chk.Stub.Deduct[ 8].AmtYTD);   m_DedTable.SetColumnValue( 50, m_Chk.Stub.Deduct[ 9].AmtYTD);
+        m_DedTable.SetColumnValue( 51, m_Chk.Stub.Deduct[10].AmtYTD);   m_DedTable.SetColumnValue( 52, m_Chk.Stub.Deduct[11].AmtYTD);
+        m_DedTable.SetColumnValue( 53, m_Chk.Stub.Deduct[12].AmtYTD);   m_DedTable.SetColumnValue( 54, m_Chk.Stub.Deduct[13].AmtYTD);
+        m_DedTable.SetColumnValue( 55, m_Chk.Stub.Deduct[14].AmtYTD);   m_DedTable.SetColumnValue( 56, m_Chk.Stub.Deduct[15].AmtYTD);
+        m_DedTable.SetColumnValue( 57, m_Chk.Stub.Deduct[16].AmtYTD);   m_DedTable.SetColumnValue( 58, m_Chk.Stub.Deduct[17].AmtYTD);
+        m_DedTable.SetColumnValue( 59, m_Chk.Stub.Deduct[18].AmtYTD);   m_DedTable.SetColumnValue( 60, m_Chk.Stub.Deduct[19].AmtYTD);
+
+        m_DedTable.SetColumnValue( 61, m_Chk.Stub.Deduct[ 0].Balance);  m_DedTable.SetColumnValue( 62, m_Chk.Stub.Deduct[ 1].Balance);
+        m_DedTable.SetColumnValue( 63, m_Chk.Stub.Deduct[ 2].Balance);  m_DedTable.SetColumnValue( 64, m_Chk.Stub.Deduct[ 3].Balance);
+        m_DedTable.SetColumnValue( 65, m_Chk.Stub.Deduct[ 4].Balance);  m_DedTable.SetColumnValue( 66, m_Chk.Stub.Deduct[ 5].Balance);
+        m_DedTable.SetColumnValue( 67, m_Chk.Stub.Deduct[ 6].Balance);  m_DedTable.SetColumnValue( 68, m_Chk.Stub.Deduct[ 7].Balance);
+        m_DedTable.SetColumnValue( 69, m_Chk.Stub.Deduct[ 8].Balance);  m_DedTable.SetColumnValue( 70, m_Chk.Stub.Deduct[ 9].Balance);
+        m_DedTable.SetColumnValue( 71, m_Chk.Stub.Deduct[10].Balance);  m_DedTable.SetColumnValue( 72, m_Chk.Stub.Deduct[11].Balance);
+        m_DedTable.SetColumnValue( 73, m_Chk.Stub.Deduct[12].Balance);  m_DedTable.SetColumnValue( 74, m_Chk.Stub.Deduct[13].Balance);
+        m_DedTable.SetColumnValue( 75, m_Chk.Stub.Deduct[14].Balance);  m_DedTable.SetColumnValue( 76, m_Chk.Stub.Deduct[15].Balance);
+        m_DedTable.SetColumnValue( 77, m_Chk.Stub.Deduct[16].Balance);  m_DedTable.SetColumnValue( 78, m_Chk.Stub.Deduct[17].Balance);
+        m_DedTable.SetColumnValue( 79, m_Chk.Stub.Deduct[18].Balance);  m_DedTable.SetColumnValue( 80, m_Chk.Stub.Deduct[19].Balance);
+
+        /*
+        IFTRACE(m_Chk.Stub.Deduct[ 0].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 1].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 2].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 3].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 4].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 5].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 6].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 7].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 8].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 9].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[10].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[11].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[12].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[13].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[14].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[15].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[16].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[17].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[18].Code.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[19].Code.Trace(__FILE__, __LINE__));
+
+        IFTRACE(m_Chk.Stub.Deduct[ 0].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 1].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 2].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 3].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 4].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 5].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 6].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 7].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 8].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 9].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[10].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[11].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[12].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[13].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[14].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[15].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[16].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[17].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[18].Amt.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[19].Amt.Trace(__FILE__, __LINE__));
+
+        IFTRACE(m_Chk.Stub.Deduct[ 0].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 1].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 2].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 3].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 4].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 5].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 6].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 7].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 8].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 9].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[10].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[11].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[12].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[13].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[14].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[15].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[16].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[17].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[18].AmtYTD.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[19].AmtYTD.Trace(__FILE__, __LINE__));
+
+        IFTRACE(m_Chk.Stub.Deduct[ 0].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 1].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 2].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 3].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 4].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 5].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 6].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 7].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 8].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[ 9].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[10].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[11].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[12].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[13].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[14].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[15].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[16].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[17].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[18].Balance.Trace(__FILE__, __LINE__));
+        IFTRACE(m_Chk.Stub.Deduct[19].Balance.Trace(__FILE__, __LINE__));
+        */
+
+        //--- Add Row to the Check Table
+        if (m_ChkTable.RowAdd() == LB_FALSE)
+        {
+            Trace0("CrpeGen: Added row to check table failed");
+            ReturnFlag = LB_FALSE;
+            goto Cleanup;
+        }
+
+        if (m_ErnTable.RowAdd() == LB_FALSE)
+        {
+            Trace0("CrpeGen: Added row to earnings table failed");
+            ReturnFlag = LB_FALSE;
+            goto Cleanup;
+        }
+
+        if (m_DedTable.RowAdd() == LB_FALSE)
+        {
+            Trace0("CrpeGen: Added row to deductions table failed");
+            ReturnFlag = LB_FALSE;
+            goto Cleanup;
+        }
+    }
+
+    //--- Cleanup
+    Cleanup:
+        m_InpFile.Close();
+        m_ChkTable.Close();
+        m_ErnTable.Close();
+        m_DedTable.Close();
+
+    return (ReturnFlag);
+}
+
+
+void GemPayLP_T::CrpeCleanup()
+{
+    //m_InpFile.Remove();
+
+    #ifdef LB_NODEBUG
+    //m_ChkTable.Remove(); 
+    //m_ErnTable.Remove(); 
+    //m_DedTable.Remove();
+    #endif
+
+    m_ChkTable.Clear();
+    m_ErnTable.Clear();
+    m_DedTable.Clear();
+}
